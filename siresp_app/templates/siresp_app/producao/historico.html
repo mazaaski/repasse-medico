@@ -1,0 +1,150 @@
+{% extends "siresp_app/base.html" %}
+
+{% block title %}Histórico de Extrações{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2><i class="bi bi-clock-history"></i> Histórico de Extrações</h2>
+    <a href="{% url 'siresp_app:producao_home' %}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> Voltar
+    </a>
+</div>
+
+<form method="post" action="{% url 'siresp_app:producao_excluir_varias' %}" id="form-excluir">
+    {% csrf_token %}
+
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <div>
+                <button type="button" class="btn btn-sm btn-outline-secondary"
+                        onclick="marcarTodos(true)">
+                    <i class="bi bi-check-square"></i> Marcar todos
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-secondary"
+                        onclick="marcarTodos(false)">
+                    <i class="bi bi-square"></i> Desmarcar
+                </button>
+                <span class="ms-3">
+                    <strong id="count-selecionadas">0</strong> selecionadas
+                </span>
+            </div>
+            <div>
+                <button type="submit" class="btn btn-outline-danger"
+                        onclick="return validarExclusao();">
+                    <i class="bi bi-trash"></i> Excluir Selecionadas
+                </button>
+            </div>
+        </div>
+        <div class="card-body p-0" style="overflow-x: auto;">
+            <table class="table table-striped table-hover mb-0">
+                <thead class="table-dark">
+                    <tr>
+                        <th class="text-center" style="width: 40px;">✔</th>
+                        <th>Data</th>
+                        <th>Médico</th>
+                        <th>CRM</th>
+                        <th>Código</th>
+                        <th>Período</th>
+                        <th class="text-center">Itens</th>
+                        <th class="text-center">Repasse</th>
+                        <th class="text-center">Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for linha in extracoes %}
+                    {% with e=linha.obj r=linha.repasse %}
+                    <tr>
+                        <td class="text-center">
+                            <input type="checkbox" name="extracao_ids" value="{{ e.pk }}"
+                                   class="form-check-input chk-extracao">
+                        </td>
+                        <td class="small">{{ e.criada_em|date:"d/m/Y H:i" }}</td>
+                        <td><strong>{{ e.medico_nome }}</strong></td>
+                        <td class="small">{{ e.medico_crm|default:"-" }}</td>
+                        <td class="small">{{ e.medico_codigo|default:"-" }}</td>
+                        <td class="small">{{ e.data_ini }} a {{ e.data_fim }}</td>
+                        <td class="text-center">
+                            <span class="badge bg-primary">{{ e.total_itens }}</span>
+                        </td>
+                        <td class="text-center">
+                            {% if r.existe %}
+                                {% if r.finalizado %}
+                                    <span class="badge bg-success"
+                                          title="Repasse finalizado em {{ r.pk }}">
+                                        <i class="bi bi-lock-fill"></i> FINALIZADO
+                                    </span>
+                                {% else %}
+                                    <span class="badge bg-warning text-dark"
+                                          title="Repasse em rascunho">
+                                        <i class="bi bi-pencil"></i> RASCUNHO
+                                    </span>
+                                {% endif %}
+                            {% else %}
+                                <span class="badge bg-secondary">
+                                    <i class="bi bi-dash-circle"></i> SEM
+                                </span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            <a href="{% url 'siresp_app:producao_ver_extracao' e.pk %}"
+                               class="btn btn-sm btn-outline-primary" title="Ver">
+                                <i class="bi bi-eye"></i>
+                            </a>
+                            <a href="{% url 'siresp_app:producao_exportar_csv' e.pk %}"
+                               class="btn btn-sm btn-outline-success" title="CSV">
+                                <i class="bi bi-filetype-csv"></i>
+                            </a>
+                            <a href="{% url 'siresp_app:producao_exportar_json' e.pk %}"
+                               class="btn btn-sm btn-outline-info" title="JSON">
+                                <i class="bi bi-filetype-json"></i>
+                            </a>
+                            <a href="{% url 'siresp_app:producao_ir_repasse' e.pk %}"
+                               class="btn btn-sm btn-outline-warning"
+                               title="{% if r.existe %}Abrir repasse{% else %}Criar repasse{% endif %}">
+                                <i class="bi bi-cash-coin"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% endwith %}
+                    {% empty %}
+                    <tr>
+                        <td colspan="9" class="text-center text-muted p-4">
+                            Nenhuma extração no histórico.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</form>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function marcarTodos(valor) {
+    document.querySelectorAll('.chk-extracao').forEach(chk => {
+        chk.checked = valor;
+    });
+    atualizarContagem();
+}
+
+function atualizarContagem() {
+    const n = document.querySelectorAll('.chk-extracao:checked').length;
+    document.getElementById('count-selecionadas').textContent = n;
+}
+
+document.querySelectorAll('.chk-extracao').forEach(chk => {
+    chk.addEventListener('change', atualizarContagem);
+});
+
+function validarExclusao() {
+    const n = document.querySelectorAll('.chk-extracao:checked').length;
+    if (n === 0) {
+        alert('Selecione pelo menos uma extração.');
+        return false;
+    }
+    return confirm(`Excluir ${n} extração(ões)? Isso não pode ser desfeito.`);
+}
+</script>
+{% endblock %}

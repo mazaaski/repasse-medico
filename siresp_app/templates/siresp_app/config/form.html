@@ -1,0 +1,114 @@
+{% extends "siresp_app/base.html" %}
+
+{% block title %}{% if grupo %}Editar{% else %}Novo{% endif %} Grupo{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-9">
+        <h2 class="mb-3">
+            {% if grupo %}
+                <i class="bi bi-pencil"></i> Editar Grupo
+            {% else %}
+                <i class="bi bi-plus-lg"></i> Novo Grupo
+            {% endif %}
+        </h2>
+
+        <form method="post" class="card">
+            {% csrf_token %}
+            <div class="card-body">
+
+                <div class="mb-3">
+                    <label class="form-label">Nome do Grupo</label>
+                    <input type="text" name="nome" class="form-control"
+                           value="{{ grupo.nome|default:'' }}" required>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Valor Base (R$)</label>
+                        <input type="text" name="valor_base" id="valor_base" class="form-control"
+                               value="{{ grupo.valor_base|default:'100,00'|stringformat:'s' }}">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Bônus 100% (R$)</label>
+                        <input type="text" name="bonus" id="bonus" class="form-control"
+                               value="{{ grupo.bonus|default:'40,00'|stringformat:'s' }}">
+                    </div>
+                </div>
+
+                <div class="alert alert-secondary">
+                    <strong>Prévia:</strong>
+                    0% → R$ <span id="prev-0">0,00</span>
+                    &nbsp;|&nbsp; 50% → R$ <span id="prev-50">0,00</span>
+                    &nbsp;|&nbsp; 100% → R$ <span id="prev-100">0,00</span>
+                </div>
+
+                <hr>
+
+                <label class="form-label">
+                    Especialidades deste grupo
+                    <small class="text-muted">(match por prefixo)</small>
+                </label>
+
+                <div class="mb-2">
+                    <button type="button" class="btn btn-sm btn-outline-secondary"
+                            onclick="marcarTodas(true)">
+                        <i class="bi bi-check-square"></i> Marcar todas
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary"
+                            onclick="marcarTodas(false)">
+                        <i class="bi bi-square"></i> Desmarcar todas
+                    </button>
+                </div>
+
+                <div class="border rounded p-2" style="max-height: 300px; overflow-y: auto;">
+                    {% for esp in especialidades %}
+                        <div class="form-check">
+                            <input class="form-check-input esp-check" type="checkbox"
+                                   name="especialidades" value="{{ esp.nome }}"
+                                   id="esp-{{ forloop.counter }}"
+                                   {% if esp.nome in selecionadas %}checked{% endif %}>
+                            <label class="form-check-label" for="esp-{{ forloop.counter }}">
+                                {{ esp.nome }}
+                            </label>
+                        </div>
+                    {% empty %}
+                        <p class="text-muted mb-0">
+                            Nenhuma especialidade conhecida ainda. Rode uma extração
+                            ou importe uma planilha para popular a lista.
+                        </p>
+                    {% endfor %}
+                </div>
+
+            </div>
+            <div class="card-footer text-end">
+                <a href="{% url 'siresp_app:config_lista' %}" class="btn btn-secondary">Cancelar</a>
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-save"></i> Salvar
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function marcarTodas(v) {
+    document.querySelectorAll('.esp-check').forEach(c => c.checked = v);
+}
+function formatarBRL(v) {
+    return v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function atualizarPrevia() {
+    const base = parseFloat((document.getElementById('valor_base').value || '0').replace(',', '.')) || 0;
+    const bonus = parseFloat((document.getElementById('bonus').value || '0').replace(',', '.')) || 0;
+    document.getElementById('prev-0').textContent = formatarBRL(base);
+    document.getElementById('prev-50').textContent = formatarBRL(base + bonus * 0.5);
+    document.getElementById('prev-100').textContent = formatarBRL(base + bonus);
+}
+document.getElementById('valor_base').addEventListener('input', atualizarPrevia);
+document.getElementById('bonus').addEventListener('input', atualizarPrevia);
+atualizarPrevia();
+</script>
+{% endblock %}

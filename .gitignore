@@ -1,0 +1,29 @@
+# Python / Django
+__pycache__/
+*.py[cod]
+*.log
+db.sqlite3
+db.sqlite3-journal
+media/
+staticfiles/
+
+# Ambientes virtuais
+venv/
+env/
+.venv/
+
+# Configurações locais
+local_settings.py
+.env
+
+# IDEs
+.vscode/
+.idea/
+
+# Chaves e certificados
+alsf.key
+alsf.pem
+cert.crt
+cert.key
+cert.pem
+key.pem

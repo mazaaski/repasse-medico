@@ -1,0 +1,280 @@
+{% extends "siresp_app/base.html" %}
+
+{% block title %}Relatórios{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2><i class="bi bi-bar-chart"></i> Relatórios</h2>
+</div>
+
+<div class="alert alert-info">
+    <i class="bi bi-info-circle"></i>
+    Aqui aparecem os <strong>repasses finalizados</strong>. Selecione os que quer
+    e escolha uma ação:
+    <ul class="mb-0 mt-2">
+        <li><strong>📊 Gerar Excel Consolidado</strong> — junta tudo num só arquivo</li>
+        <li><strong>🔓 Reabrir Selecionados</strong> — volta pra "rascunho" (exige senha de admin)</li>
+    </ul>
+</div>
+
+<!-- Filtros -->
+<div class="card mb-3">
+    <div class="card-body">
+        <form method="get" class="row g-2">
+            <div class="col-md-4">
+                <label class="form-label small">Médico</label>
+                <input type="text" name="medico" value="{{ filtro_medico }}"
+                       class="form-control form-control-sm" placeholder="Nome parcial">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small">Data inicial</label>
+                <input type="text" name="data_ini" value="{{ filtro_data_ini }}"
+                       class="form-control form-control-sm" placeholder="DD/MM/AAAA">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small">Data final</label>
+                <input type="text" name="data_fim" value="{{ filtro_data_fim }}"
+                       class="form-control form-control-sm" placeholder="DD/MM/AAAA">
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <button class="btn btn-outline-primary btn-sm w-100">
+                    <i class="bi bi-search"></i> Filtrar
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Form de geração de Excel -->
+<form method="post" action="{% url 'siresp_app:relatorios_gerar_excel' %}" id="form-excel">
+    {% csrf_token %}
+</form>
+
+<!-- Form de reabrir -->
+<form method="post" action="{% url 'siresp_app:relatorios_reabrir_varios' %}" id="form-reabrir">
+    {% csrf_token %}
+    <input type="hidden" name="admin_user" id="input-admin-user">
+    <input type="hidden" name="admin_pass" id="input-admin-pass">
+</form>
+
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <div>
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="marcarTodos(true)">
+                <i class="bi bi-check-square"></i> Marcar todos
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="marcarTodos(false)">
+                <i class="bi bi-square"></i> Desmarcar
+            </button>
+            <span class="ms-3">
+                <strong id="count-selecionados">0</strong> selecionados
+            </span>
+        </div>
+        <div class="d-flex gap-2">
+            <button type="button" class="btn btn-warning" onclick="pedirSenhaReabrir()">
+                <i class="bi bi-unlock"></i> Reabrir Selecionados
+            </button>
+            <button type="button" class="btn btn-success" onclick="gerarExcel()">
+                <i class="bi bi-file-earmark-excel"></i> Gerar Excel Consolidado
+            </button>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        <table class="table table-striped table-hover mb-0">
+            <thead class="table-dark">
+                <tr>
+                    <th class="text-center" style="width: 40px;">✔</th>
+                    <th>Profissional</th>
+                    <th>CRM</th>
+                    <th>Período</th>
+                    <th class="text-center">Itens Marcados</th>
+                    <th class="text-center">Horas</th>
+                    <th class="text-end">Total (R$)</th>
+                    <th class="text-center">Finalizado em</th>
+                    <th class="text-center">Ações</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in repasses %}
+                <tr>
+                    <td class="text-center">
+                        <input type="checkbox" value="{{ r.pk }}"
+                               class="form-check-input chk-repasse">
+                    </td>
+                    <td><strong>{{ r.extracao.medico_nome }}</strong></td>
+                    <td>{{ r.extracao.medico_crm|default:"-" }}</td>
+                    <td>{{ r.extracao.data_ini }} a {{ r.extracao.data_fim }}</td>
+                    <td class="text-center">
+                        <span class="badge bg-primary">{{ r.itens.all|length }}</span>
+                    </td>
+                    <td class="text-center">{{ r.horas_total_final|floatformat:2 }}</td>
+                    <td class="text-end fw-bold text-success">
+                        R$ {{ r.valor_total_final|floatformat:2 }}
+                    </td>
+                    <td class="text-center small">
+                        {{ r.finalizado_em|date:"d/m/Y H:i" }}
+                    </td>
+                    <td class="text-center">
+                        <a href="{% url 'siresp_app:repasse_ver' r.pk %}"
+                           class="btn btn-sm btn-outline-primary" title="Abrir">
+                            <i class="bi bi-box-arrow-up-right"></i>
+                        </a>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="9" class="text-center text-muted p-4">
+                        Nenhum repasse finalizado.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Modal de senha -->
+<div class="modal fade" id="modalSenha" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-warning">
+                <h5 class="modal-title">
+                    <i class="bi bi-shield-lock"></i> Autorização de Admin
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="small text-muted mb-3">
+                    Reabrir repasses finalizados exige autorização de administrador.
+                    Informe as credenciais de um usuário admin.
+                </p>
+
+                <div class="mb-3">
+                    <label class="form-label">Usuário admin</label>
+                    <input type="text" id="modal-admin-user" class="form-control" autocomplete="off">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Senha</label>
+                    <input type="password" id="modal-admin-pass" class="form-control" autocomplete="off">
+                </div>
+                <div id="modal-erro" class="alert alert-danger py-2 small" style="display:none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-warning" onclick="confirmarReabrir()">
+                    <i class="bi bi-unlock"></i> Reabrir
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let modalSenha = null;
+
+function marcarTodos(valor) {
+    document.querySelectorAll('.chk-repasse').forEach(chk => {
+        chk.checked = valor;
+    });
+    atualizarContagem();
+}
+
+function atualizarContagem() {
+    const n = document.querySelectorAll('.chk-repasse:checked').length;
+    document.getElementById('count-selecionados').textContent = n;
+}
+
+document.querySelectorAll('.chk-repasse').forEach(chk => {
+    chk.addEventListener('change', atualizarContagem);
+});
+
+function getSelecionados() {
+    return Array.from(document.querySelectorAll('.chk-repasse:checked'))
+                .map(c => c.value);
+}
+
+// =========================================================
+// GERAR EXCEL
+// =========================================================
+function gerarExcel() {
+    const ids = getSelecionados();
+    if (ids.length === 0) {
+        alert('Selecione pelo menos um repasse.');
+        return;
+    }
+
+    // Cria inputs hidden no form e envia
+    const form = document.getElementById('form-excel');
+    form.querySelectorAll('input[name="repasses"]').forEach(i => i.remove());
+    ids.forEach(id => {
+        const inp = document.createElement('input');
+        inp.type = 'hidden';
+        inp.name = 'repasses';
+        inp.value = id;
+        form.appendChild(inp);
+    });
+    form.submit();
+}
+
+// =========================================================
+// REABRIR COM SENHA
+// =========================================================
+function pedirSenhaReabrir() {
+    const ids = getSelecionados();
+    if (ids.length === 0) {
+        alert('Selecione pelo menos um repasse.');
+        return;
+    }
+
+    document.getElementById('modal-admin-user').value = '';
+    document.getElementById('modal-admin-pass').value = '';
+    document.getElementById('modal-erro').style.display = 'none';
+
+    if (!modalSenha) {
+        modalSenha = new bootstrap.Modal(document.getElementById('modalSenha'));
+    }
+    modalSenha.show();
+
+    setTimeout(() => document.getElementById('modal-admin-user').focus(), 300);
+}
+
+function confirmarReabrir() {
+    const user = document.getElementById('modal-admin-user').value.trim();
+    const pass = document.getElementById('modal-admin-pass').value;
+    const erro = document.getElementById('modal-erro');
+
+    if (!user || !pass) {
+        erro.textContent = 'Preencha usuário e senha.';
+        erro.style.display = 'block';
+        return;
+    }
+
+    const ids = getSelecionados();
+    const form = document.getElementById('form-reabrir');
+    form.querySelectorAll('input[name="repasses"]').forEach(i => i.remove());
+
+    ids.forEach(id => {
+        const inp = document.createElement('input');
+        inp.type = 'hidden';
+        inp.name = 'repasses';
+        inp.value = id;
+        form.appendChild(inp);
+    });
+
+    document.getElementById('input-admin-user').value = user;
+    document.getElementById('input-admin-pass').value = pass;
+
+    form.submit();
+}
+
+// ENTER no modal também confirma
+document.getElementById('modal-admin-pass').addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        confirmarReabrir();
+    }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,51 @@
+{% extends "siresp_app/base.html" %}
+
+{% block title %}Editar Regra{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-7">
+        <h2 class="mb-3"><i class="bi bi-pencil"></i> Editar Regra</h2>
+
+        <form method="post" class="card">
+            {% csrf_token %}
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">Profissional</label>
+                    <input type="text" name="profissional" class="form-control"
+                           value="{{ regra.profissional_norm }}" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Especialidade</label>
+                    <input type="text" name="especialidade" class="form-control"
+                           value="{{ regra.especialidade_norm }}" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Minutos</label>
+                    <input type="text" name="minutos" class="form-control"
+                           value="{{ regra.minutos|join:', ' }}" required>
+                </div>
+                <hr>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Valor Base (R$)</label>
+                        <input type="text" name="valor_base" class="form-control"
+                               value="{% if regra.valor_base_override %}{{ regra.valor_base_override }}{% endif %}"
+                               placeholder="Vazio = usar grupo">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Bônus 100% (R$)</label>
+                        <input type="text" name="bonus" class="form-control"
+                               value="{% if regra.bonus_override %}{{ regra.bonus_override }}{% endif %}"
+                               placeholder="Vazio = usar grupo">
+                    </div>
+                </div>
+            </div>
+            <div class="card-footer text-end">
+                <a href="{% url 'siresp_app:config_regras' %}" class="btn btn-secondary">Cancelar</a>
+                <button type="submit" class="btn btn-primary">Salvar</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

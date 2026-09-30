@@ -1,0 +1,170 @@
+{% extends "siresp_app/base.html" %}
+
+{% block title %}Regras de Minutos{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2><i class="bi bi-clock-history"></i> Regras de Minutos</h2>
+    <div>
+        <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#modalNovaRegra">
+            <i class="bi bi-plus-lg"></i> Nova Regra
+        </button>
+        <a href="{% url 'siresp_app:config_importar' %}" class="btn btn-primary">
+            <i class="bi bi-upload"></i> Importar Planilha
+        </a>
+        <a href="{% url 'siresp_app:config_limpar_regras' %}"
+           class="btn btn-outline-danger"
+           onclick="return confirm('Apagar TODAS as {{ total }} regras?');">
+            <i class="bi bi-trash"></i> Limpar Tudo
+        </a>
+        <a href="{% url 'siresp_app:config_lista' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> Voltar
+        </a>
+    </div>
+</div>
+
+<div class="card mb-3">
+    <div class="card-body">
+        <form method="get" class="row g-2">
+            <div class="col-md-9">
+                <input type="text" name="q" value="{{ busca }}"
+                       class="form-control" placeholder="Buscar por profissional ou especialidade...">
+            </div>
+            <div class="col-md-3">
+                <button class="btn btn-outline-primary w-100">
+                    <i class="bi bi-search"></i> Buscar
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        Total de regras: <strong>{{ total }}</strong>
+        {% if busca %} — filtrado por "<strong>{{ busca }}</strong>"{% endif %}
+    </div>
+    <div class="card-body p-0">
+        <table class="table table-striped table-hover mb-0">
+            <thead class="table-dark">
+                <tr>
+                    <th>Profissional</th>
+                    <th>Especialidade</th>
+                    <th class="text-center">Minutos</th>
+                    <th class="text-center">Vlr Base</th>
+                    <th class="text-center">Bônus</th>
+                    <th class="text-end">Ações</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in regras %}
+                <tr>
+                    <td>{{ r.profissional_norm }}</td>
+                    <td>{{ r.especialidade_norm }}</td>
+                    <td class="text-center">
+                        {% for m in r.minutos %}
+                            <span class="badge bg-primary">{{ m }}</span>
+                        {% endfor %}
+                    </td>
+                    <td class="text-center">
+                        {% if r.valor_base_override %}
+                            <span class="badge bg-info">R$ {{ r.valor_base_override|floatformat:2 }}</span>
+                        {% else %}
+                            <span class="text-muted">padrão</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-center">
+                        {% if r.bonus_override %}
+                            <span class="badge bg-info">R$ {{ r.bonus_override|floatformat:2 }}</span>
+                        {% else %}
+                            <span class="text-muted">padrão</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-end">
+                        <a href="{% url 'siresp_app:config_editar_regra' r.pk %}"
+                           class="btn btn-sm btn-outline-primary">
+                            <i class="bi bi-pencil"></i>
+                        </a>
+                        <form method="post"
+                              action="{% url 'siresp_app:config_deletar_regra' r.pk %}"
+                              style="display:inline;"
+                              onsubmit="return confirm('Remover?');">
+                            {% csrf_token %}
+                            <button class="btn btn-sm btn-outline-danger">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="6" class="text-center text-muted p-4">
+                        Nenhuma regra cadastrada.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Modal Nova Regra -->
+<div class="modal fade" id="modalNovaRegra" tabindex="-1">
+    <div class="modal-dialog">
+        <form method="post" action="{% url 'siresp_app:config_nova_regra' %}">
+            {% csrf_token %}
+            <div class="modal-content">
+                <div class="modal-header bg-success text-white">
+                    <h5 class="modal-title">➕ Nova Regra</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Profissional *</label>
+                        <input type="text" name="profissional" class="form-control" required
+                               placeholder="Nome como aparece no SIRESP">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Especialidade *</label>
+                        <input type="text" name="especialidade" class="form-control" required
+                               list="lista-especialidades"
+                               placeholder="Nome como aparece no SIRESP">
+                        <datalist id="lista-especialidades">
+                            {% for e in especialidades %}
+                                <option value="{{ e.nome }}">
+                            {% endfor %}
+                        </datalist>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Minutos *</label>
+                        <input type="text" name="minutos" class="form-control" required
+                               placeholder="Ex: 15 ou 15, 30 (separados por vírgula)">
+                        <small class="text-muted">Se colocar mais de um, o usuário escolhe no Repasse.</small>
+                    </div>
+                    <hr>
+                    <div class="alert alert-info py-2 small">
+                        <strong>Opcional:</strong> Se preencher abaixo, esses valores <strong>substituem</strong>
+                        os valores do grupo padrão para esse par.
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Valor Base (R$)</label>
+                            <input type="text" name="valor_base" class="form-control"
+                                   placeholder="Vazio = usar grupo">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Bônus 100% (R$)</label>
+                            <input type="text" name="bonus" class="form-control"
+                                   placeholder="Vazio = usar grupo">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-success">Salvar</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

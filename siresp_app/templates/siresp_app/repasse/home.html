@@ -1,0 +1,562 @@
+{% extends "siresp_app/base.html" %}
+
+{% block title %}Repasse - {{ repasse.extracao.medico_nome }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+    <div>
+        <h2 class="mb-0"><i class="bi bi-cash-coin"></i> Repasse</h2>
+        <small class="text-muted">
+            <strong>{{ repasse.extracao.medico_nome }}</strong>
+            {% if repasse.extracao.medico_crm %} — CRM: {{ repasse.extracao.medico_crm }}{% endif %}
+            | Período: {{ repasse.extracao.data_ini }} a {{ repasse.extracao.data_fim }}
+            | {{ itens|length }} especialidades
+        </small>
+    </div>
+
+    <div class="d-flex gap-2 flex-wrap align-items-center">
+        <a href="{% url 'siresp_app:producao_ver_extracao' repasse.extracao.pk %}"
+           class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-arrow-left"></i> Voltar
+        </a>
+
+        {% if repasse.status != 'finalizado' %}
+            <button class="btn btn-outline-info btn-sm" onclick="recalcular()">
+                <i class="bi bi-arrow-clockwise"></i> Recalcular
+            </button>
+        {% endif %}
+
+        <a href="{% url 'siresp_app:repasse_excel' repasse.pk %}"
+           class="btn btn-success btn-sm"
+           onclick="return confirm('Exportar apenas as linhas marcadas?');">
+            <i class="bi bi-file-earmark-excel"></i> Exportar Excel
+        </a>
+
+        {% if repasse.status == 'finalizado' %}
+            <span class="badge bg-success py-2 px-3">
+                <i class="bi bi-check-circle"></i>
+                FINALIZADO em {{ repasse.finalizado_em|date:"d/m/Y H:i" }}
+            </span>
+            <button class="btn btn-warning btn-sm" onclick="reabrirRepasse()">
+                <i class="bi bi-unlock"></i> Reabrir
+            </button>
+        {% else %}
+            <button class="btn btn-primary btn-sm" onclick="finalizarRepasse()">
+                <i class="bi bi-check-circle"></i> Finalizar Repasse
+            </button>
+        {% endif %}
+    </div>
+</div>
+
+{% if repasse.status == 'finalizado' %}
+<div class="alert alert-success">
+    <i class="bi bi-lock-fill"></i>
+    Este repasse está <strong>finalizado</strong>. Para editar, clique em
+    <strong>"🔓 Reabrir"</strong>.
+</div>
+{% endif %}
+
+<!-- Alertas de ambiguidade -->
+{% if qtd_ambiguos %}
+<div class="alert alert-warning">
+    <h5 class="mb-2">
+        <i class="bi bi-exclamation-triangle"></i>
+        {{ qtd_ambiguos }} especialidade(s) com múltiplos minutos nas Regras
+    </h5>
+    <p class="mb-2 small">
+        Escolha qual usar para cada uma. Isso vai atualizar <strong>todas</strong> as
+        linhas com a mesma especialidade.
+    </p>
+    <ul class="mb-0 small">
+        {% for amb in ambiguos %}
+        <li>
+            <strong>{{ amb.esp }}</strong> — minutos disponíveis:
+            {% for v in amb.valores %}
+                <button class="btn btn-sm btn-outline-primary py-0 px-2 me-1"
+                        onclick="escolherMinuto({{ amb.item_id }}, {{ v }})">
+                    {{ v }}
+                </button>
+            {% endfor %}
+        </li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+
+<!-- Botões de ação em massa -->
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <div class="d-flex flex-wrap gap-2 align-items-center">
+            <button class="btn btn-sm btn-outline-primary" onclick="marcarTodas(true)">
+                <i class="bi bi-check-square"></i> Marcar todas
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" onclick="marcarTodas(false)">
+                <i class="bi bi-square"></i> Desmarcar todas
+            </button>
+            <div class="vr"></div>
+            <button class="btn btn-sm btn-outline-warning" onclick="arredondar('baixo')">
+                <i class="bi bi-arrow-down"></i> Arred. p/ baixo
+            </button>
+            <button class="btn btn-sm btn-outline-warning" onclick="arredondar('cima')">
+                <i class="bi bi-arrow-up"></i> Arred. p/ cima
+            </button>
+            <button class="btn btn-sm btn-outline-warning" onclick="arredondar('exato')">
+                <i class="bi bi-arrow-repeat"></i> Restaurar exatas
+            </button>
+            <div class="vr"></div>
+            <button class="btn btn-sm btn-outline-danger" onclick="zerar()">
+                <i class="bi bi-eraser"></i> Zerar valores
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Tabela do repasse -->
+<div class="card mb-3">
+    <div class="card-body p-0" style="overflow-x: auto;">
+        <table class="table table-sm table-striped table-hover mb-0" id="tabela-repasse">
+            <thead class="table-dark">
+                <tr>
+                    <th class="text-center" style="width: 40px;">✔</th>
+                    <th style="min-width: 220px;">Especialidade</th>
+                    <th class="text-center">Oferta</th>
+                    <th class="text-center">Atend.</th>
+                    <th class="text-center" style="width: 70px;">Minutos</th>
+                    <th class="text-center">Vlr Base</th>
+                    <th class="text-center">Bônus 100%</th>
+                    <th class="text-center" style="width: 90px;">Bônus %</th>
+                    <th class="text-center">Vlr/Hora</th>
+                    <th class="text-center">Horas Real</th>
+                    <th class="text-center">Horas Final</th>
+                    <th class="text-center">Total Real</th>
+                    <th class="text-center">Total Final</th>
+                </tr>
+            </thead>
+            <tbody id="tbody-repasse">
+                {% for item in itens %}
+                <tr data-id="{{ item.id }}"
+                    class="{% if item.faltou_regra %}table-warning{% endif %}{% if item.marcado %} table-active{% endif %}">
+                    <td class="text-center">
+                        <input type="checkbox"
+                               class="form-check-input chk-marcado"
+                               data-id="{{ item.id }}"
+                               {% if item.marcado %}checked{% endif %}
+                               {% if repasse.status == 'finalizado' %}disabled{% endif %}>
+                    </td>
+                    <td>
+                        <strong>{{ item.especialidade }}</strong>
+                        {% if item.faltou_regra %}
+                            <span class="badge bg-warning text-dark" title="Sem regra de minutos. Usando padrão 15.">!</span>
+                        {% endif %}
+                        <br><small class="text-muted">{{ item.grupo_nome }}</small>
+                    </td>
+                    <td class="text-center">{{ item.oferta }}</td>
+                    <td class="text-center">{{ item.atendimentos }}</td>
+                    <td class="text-center">
+                        <span class="valor-minutos {% if item.faltou_regra %}text-warning fw-bold{% endif %}"
+                              data-id="{{ item.id }}"
+                              style="cursor: pointer; text-decoration: underline dotted;"
+                              title="Clique para editar">
+                            {{ item.minutos|floatformat:0 }}
+                        </span>
+                    </td>
+                    <td class="text-center">
+                        <span class="valor-base"
+                              data-id="{{ item.id }}"
+                              style="cursor: pointer; text-decoration: underline dotted;"
+                              title="Clique para editar">
+                            R$ {{ item.valor_base|floatformat:2 }}
+                        </span>
+                    </td>
+                    <td class="text-center">
+                        <span class="valor-bonus"
+                              data-id="{{ item.id }}"
+                              style="cursor: pointer; text-decoration: underline dotted;"
+                              title="Clique para editar">
+                            R$ {{ item.bonus_cheio|floatformat:2 }}
+                        </span>
+                    </td>
+                    <td class="text-center">
+                        <select class="form-select form-select-sm sel-bonus-perc"
+                                data-id="{{ item.id }}"
+                                {% if repasse.status == 'finalizado' %}disabled{% endif %}>
+                            <option value="0%" {% if item.bonus_percent == '0%' %}selected{% endif %}>0%</option>
+                            <option value="50%" {% if item.bonus_percent == '50%' %}selected{% endif %}>50%</option>
+                            <option value="100%" {% if item.bonus_percent == '100%' %}selected{% endif %}>100%</option>
+                        </select>
+                    </td>
+                    <td class="text-center fw-bold">R$ {{ item.valor_hora|floatformat:2 }}</td>
+                    <td class="text-center">{{ item.horas_real|floatformat:2 }}</td>
+                    <td class="text-center">{{ item.horas_final|floatformat:2 }}</td>
+                    <td class="text-center">
+                        {% if item.marcado %}R$ {{ item.total_real|floatformat:2 }}{% endif %}
+                    </td>
+                    <td class="text-center fw-bold text-success">
+                        {% if item.marcado %}R$ {{ item.total_final|floatformat:2 }}{% endif %}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="13" class="text-center text-muted p-4">
+                        Nenhum item. Volte e gere o repasse novamente.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Rodapé de totais -->
+<div class="card">
+    <div class="card-body py-2">
+        <div class="row">
+            <div class="col-md-6">
+                <h5 class="mb-0">
+                    <i class="bi bi-clock"></i>
+                    TOTAL HORAS:
+                    <span id="total-horas-real" class="text-primary">{{ repasse.horas_total_real|floatformat:2 }}</span> h (Real)
+                    <span class="text-muted">|</span>
+                    <span id="total-horas-final" class="text-primary">{{ repasse.horas_total_final|floatformat:2 }}</span> h (Final)
+                </h5>
+            </div>
+            <div class="col-md-6 text-end">
+                <h5 class="mb-0">
+                    <i class="bi bi-cash-stack"></i>
+                    TOTAL GERAL:
+                    <span id="total-real" class="text-muted">R$ {{ repasse.valor_total_real|floatformat:2 }}</span>
+                    <span class="text-muted">|</span>
+                    <span id="total-final" class="text-success fw-bold">R$ {{ repasse.valor_total_final|floatformat:2 }}</span>
+                </h5>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Log -->
+<div class="card mt-3">
+    <div class="card-header d-flex justify-content-between">
+        <span><i class="bi bi-terminal"></i> Log</span>
+        <button class="btn btn-sm btn-outline-secondary"
+                onclick="document.getElementById('log-debug').textContent = 'Log limpo.';">
+            Limpar
+        </button>
+    </div>
+    <div class="card-body p-2">
+        <pre id="log-debug" style="max-height: 150px; overflow-y: auto; font-size: 11px; margin: 0; background: #f8f9fa; padding: 8px; border-radius: 4px;">Aguardando ações...</pre>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// =========================================================
+// CONFIG
+// =========================================================
+const REPASSE_ID = {{ repasse.pk }};
+const FINALIZADO = {% if repasse.status == 'finalizado' %}true{% else %}false{% endif %};
+
+// =========================================================
+// LOG
+// =========================================================
+function log(msg) {
+    const el = document.getElementById('log-debug');
+    const ts = new Date().toLocaleTimeString('pt-BR');
+    el.textContent = `[${ts}] ${msg}\n` + el.textContent;
+    el.textContent = el.textContent.split('\n').slice(0, 40).join('\n');
+}
+
+// =========================================================
+// CSRF / FETCH
+// =========================================================
+function getCookie(name) {
+    let v = null;
+    if (document.cookie) {
+        for (let c of document.cookie.split(';')) {
+            c = c.trim();
+            if (c.startsWith(name + '=')) {
+                v = decodeURIComponent(c.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return v;
+}
+const CSRF = getCookie('csrftoken');
+
+function postJSON(url, body) {
+    return fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': CSRF,
+        },
+        body: JSON.stringify(body || {}),
+    }).then(r => r.json());
+}
+
+// =========================================================
+// ATUALIZAR ITEM
+// =========================================================
+function atualizarItem(itemId, campo, valor) {
+    if (FINALIZADO) {
+        alert('Esse repasse está finalizado. Reabra pra editar.');
+        return;
+    }
+    log(`→ Atualizar item ${itemId}: ${campo} = ${valor}`);
+    return postJSON(`/repasse/item/${itemId}/atualizar/`, {
+        campo: campo,
+        valor: valor,
+    }).then(data => {
+        if (!data.ok) {
+            alert('Erro: ' + data.mensagem);
+            return;
+        }
+        log('← OK');
+        atualizarLinha(data.item);
+        atualizarTotais(data.repasse);
+    }).catch(e => log('❌ ' + e));
+}
+
+// =========================================================
+// ATUALIZAR LINHA
+// =========================================================
+function atualizarLinha(item) {
+    const tr = document.querySelector(`tr[data-id="${item.id}"]`);
+    if (!tr) return;
+
+    tr.querySelector('.valor-minutos').textContent = Math.round(item.minutos);
+    tr.querySelector('.valor-base').textContent = 'R$ ' + item.valor_base.toFixed(2).replace('.', ',');
+    tr.querySelector('.valor-bonus').textContent = 'R$ ' + item.bonus_cheio.toFixed(2).replace('.', ',');
+
+    const tds = tr.querySelectorAll('td');
+    tds[8].textContent = 'R$ ' + item.valor_hora.toFixed(2).replace('.', ',');
+    tds[9].textContent = item.horas_real.toFixed(2).replace('.', ',');
+    tds[10].textContent = item.horas_final.toFixed(2).replace('.', ',');
+
+    if (item.marcado) {
+        tds[11].textContent = 'R$ ' + item.total_real.toFixed(2).replace('.', ',');
+        tds[12].textContent = 'R$ ' + item.total_final.toFixed(2).replace('.', ',');
+        tr.classList.add('table-active');
+    } else {
+        tds[11].textContent = '';
+        tds[12].textContent = '';
+        tr.classList.remove('table-active');
+    }
+
+    tr.querySelector('.chk-marcado').checked = item.marcado;
+    tr.querySelector('.sel-bonus-perc').value = item.bonus_percent;
+
+    if (item.faltou_regra) {
+        tr.classList.add('table-warning');
+    } else {
+        tr.classList.remove('table-warning');
+    }
+}
+
+function atualizarTotais(rep) {
+    document.getElementById('total-horas-real').textContent = rep.horas_total_real.toFixed(2).replace('.', ',');
+    document.getElementById('total-horas-final').textContent = rep.horas_total_final.toFixed(2).replace('.', ',');
+    document.getElementById('total-real').textContent = 'R$ ' + rep.valor_total_real.toFixed(2).replace('.', ',');
+    document.getElementById('total-final').textContent = 'R$ ' + rep.valor_total_final.toFixed(2).replace('.', ',');
+}
+
+// =========================================================
+// EVENTOS
+// =========================================================
+document.querySelectorAll('.chk-marcado').forEach(chk => {
+    chk.addEventListener('change', e => {
+        atualizarItem(e.target.dataset.id, 'marcado', e.target.checked);
+    });
+});
+
+document.querySelectorAll('.sel-bonus-perc').forEach(sel => {
+    sel.addEventListener('change', e => {
+        atualizarItem(e.target.dataset.id, 'bonus_percent', e.target.value);
+    });
+});
+
+document.querySelectorAll('.valor-minutos').forEach(el => {
+    el.addEventListener('click', () => {
+        abrirPopupEdicao(el.dataset.id, 'minutos', el.textContent.trim());
+    });
+});
+
+document.querySelectorAll('.valor-base').forEach(el => {
+    el.addEventListener('click', () => {
+        abrirPopupEdicao(el.dataset.id, 'valor_base', el.textContent.replace('R$', '').trim());
+    });
+});
+
+document.querySelectorAll('.valor-bonus').forEach(el => {
+    el.addEventListener('click', () => {
+        abrirPopupEdicao(el.dataset.id, 'bonus_cheio', el.textContent.replace('R$', '').trim());
+    });
+});
+
+function abrirPopupEdicao(itemId, campo, valorAtual) {
+    if (FINALIZADO) {
+        alert('Esse repasse está finalizado. Reabra pra editar.');
+        return;
+    }
+
+    const titulos = {
+        'minutos': 'Minutos por Atendimento',
+        'valor_base': 'Valor Base (R$)',
+        'bonus_cheio': 'Bônus 100% (R$)',
+    };
+    const novo = prompt(titulos[campo] + ':', valorAtual);
+    if (novo === null) return;
+
+    const num = parseFloat(novo.replace(',', '.'));
+    if (isNaN(num) || num < 0) {
+        alert('Valor inválido.');
+        return;
+    }
+
+    atualizarItem(itemId, campo, num);
+}
+
+// =========================================================
+// AÇÕES EM MASSA
+// =========================================================
+function marcarTodas(marcar) {
+    if (FINALIZADO) {
+        alert('Esse repasse está finalizado. Reabra pra editar.');
+        return;
+    }
+    log(`→ Marcar todas: ${marcar}`);
+    postJSON(`/repasse/${REPASSE_ID}/marcar-todas/`, { marcar: marcar })
+        .then(data => {
+            if (!data.ok) { alert(data.mensagem); return; }
+            data.itens.forEach(atualizarLinha);
+            atualizarTotais(data.repasse);
+            log('← OK');
+        })
+        .catch(e => log('❌ ' + e));
+}
+
+function arredondar(modo) {
+    if (FINALIZADO) {
+        alert('Esse repasse está finalizado. Reabra pra editar.');
+        return;
+    }
+    log(`→ Arredondar: ${modo}`);
+    postJSON(`/repasse/${REPASSE_ID}/arredondar/`, { modo: modo })
+        .then(data => {
+            if (!data.ok) { alert(data.mensagem); return; }
+            data.itens.forEach(atualizarLinha);
+            atualizarTotais(data.repasse);
+            log('← OK');
+        })
+        .catch(e => log('❌ ' + e));
+}
+
+function recalcular() {
+    if (FINALIZADO) {
+        alert('Esse repasse está finalizado. Reabra pra editar.');
+        return;
+    }
+    if (!confirm('Recalcular TODOS os itens a partir das Regras e Grupos atuais? Suas edições manuais serão perdidas.')) return;
+    log('→ Recalcular');
+    postJSON(`/repasse/${REPASSE_ID}/recalcular/`)
+        .then(data => {
+            if (!data.ok) { alert(data.mensagem); return; }
+            location.reload();
+        })
+        .catch(e => log('❌ ' + e));
+}
+
+function zerar() {
+    if (FINALIZADO) {
+        alert('Esse repasse está finalizado. Reabra pra editar.');
+        return;
+    }
+    if (!confirm('Zerar Minutos, Valor Base e Bônus de TODAS as linhas?')) return;
+    log('→ Zerar valores');
+    postJSON(`/repasse/${REPASSE_ID}/zerar/`)
+        .then(data => {
+            if (!data.ok) { alert(data.mensagem); return; }
+            data.itens.forEach(atualizarLinha);
+            atualizarTotais(data.repasse);
+            log('← OK');
+        })
+        .catch(e => log('❌ ' + e));
+}
+
+// =========================================================
+// ESCOLHER MINUTO (ambiguidade)
+// =========================================================
+function escolherMinuto(itemId, minutos) {
+    if (FINALIZADO) {
+        alert('Esse repasse está finalizado. Reabra pra editar.');
+        return;
+    }
+    log(`→ Aplicando ${minutos} min ao item ${itemId}`);
+    postJSON(`/repasse/item/${itemId}/escolher-minuto/`, { minutos: minutos })
+        .then(data => {
+            if (!data.ok) {
+                alert('Erro: ' + data.mensagem);
+                return;
+            }
+            data.itens.forEach(atualizarLinha);
+            atualizarTotais(data.repasse);
+
+            let msg = `✅ ${data.afetados} linha(s) atualizada(s) com ${minutos} min.`;
+            if (data.marcadas === 0) {
+                msg += ` (nenhuma estava marcada, apliquei em todas as ${data.total_candidatas})`;
+            } else {
+                msg += ` (só as marcadas da mesma base)`;
+            }
+            log('← ' + msg);
+
+            setTimeout(() => location.reload(), 500);
+        })
+        .catch(e => log('❌ ' + e));
+}
+
+// =========================================================
+// FINALIZAR / REABRIR
+// =========================================================
+function finalizarRepasse() {
+    const marcados = document.querySelectorAll('.chk-marcado:checked').length;
+    if (marcados === 0) {
+        alert('Marque pelo menos uma linha antes de finalizar.');
+        return;
+    }
+    if (!confirm('Finalizar o repasse? Isso vai travar as edições.')) return;
+
+    log('→ Finalizando repasse...');
+    postJSON(`/repasse/${REPASSE_ID}/finalizar/`)
+        .then(data => {
+            log('← ' + JSON.stringify(data));
+            if (!data.ok) {
+                alert(data.mensagem);
+                return;
+            }
+            alert(data.mensagem);
+            location.reload();
+        })
+        .catch(e => log('❌ ' + e));
+}
+
+function reabrirRepasse() {
+    if (!confirm('Reabrir o repasse para edição?')) return;
+
+    log('→ Reabrindo repasse...');
+    postJSON(`/repasse/${REPASSE_ID}/reabrir/`)
+        .then(data => {
+            log('← ' + JSON.stringify(data));
+            if (!data.ok) {
+                alert(data.mensagem);
+                return;
+            }
+            alert(data.mensagem);
+            location.reload();
+        })
+        .catch(e => log('❌ ' + e));
+}
+
+log('Página carregada. Repasse #' + REPASSE_ID + (FINALIZADO ? ' [FINALIZADO]' : ''));
+</script>
+{% endblock %}

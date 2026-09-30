@@ -1,0 +1,52 @@
+{% extends "siresp_app/base.html" %}
+
+{% block title %}Importar Planilha{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2><i class="bi bi-upload"></i> Importar Planilha de Agendas</h2>
+    <a href="{% url 'siresp_app:config_lista' %}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> Voltar
+    </a>
+</div>
+
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+
+        <div class="alert alert-info">
+            <strong>Formatos aceitos:</strong>
+            <code>.xls</code>, <code>.xlsx</code>, <code>.xlsm</code>.
+            <br>
+            O arquivo precisa ter as colunas
+            <strong>PROFISSIONAL</strong>,
+            <strong>ESPECIALIDADE</strong> e
+            <strong>INTERVALO ENTRE AS CONSULTAS</strong>.
+        </div>
+
+        <form method="post" enctype="multipart/form-data" class="card">
+            {% csrf_token %}
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">Arquivo da planilha</label>
+                    <input type="file" name="arquivo" class="form-control"
+                           accept=".xls,.xlsx,.xlsm" required>
+                </div>
+                <p class="text-muted small mb-0">
+                    As especialidades encontradas serão adicionadas automaticamente
+                    à lista de <strong>Especialidades Conhecidas</strong>, e os
+                    pares (profissional, especialidade) viram
+                    <strong>Regras de Minutos</strong>.
+                </p>
+            </div>
+            <div class="card-footer text-end">
+                <a href="{% url 'siresp_app:config_regras' %}" class="btn btn-outline-secondary">
+                    <i class="bi bi-list"></i> Ver Regras
+                </a>
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-upload"></i> Importar
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,744 @@
+{% extends "siresp_app/base.html" %}
+
+{% block title %}Produção{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2><i class="bi bi-clipboard2-pulse"></i> Produção</h2>
+</div>
+
+<div class="alert alert-info">
+    <i class="bi bi-info-circle"></i>
+    <strong>Modo headless:</strong>
+    O Chrome roda invisível no servidor. Você digita o CAPTCHA diretamente
+    aqui na tela, sem precisar acessar a VM.
+</div>
+
+<div class="row g-3">
+
+    <!-- COLUNA ESQUERDA -->
+    <div class="col-lg-5">
+
+        <!-- Credenciais -->
+        <div class="card mb-3">
+            <div class="card-header"><i class="bi bi-key"></i> Credenciais SIRESP</div>
+            <div class="card-body">
+                <form method="post" action="{% url 'siresp_app:producao_salvar_cred' %}">
+                    {% csrf_token %}
+
+                    <div class="row g-2">
+                        <div class="col-md-6">
+                            <label class="form-label small">Usuário</label>
+                            <input type="text" name="usuario" class="form-control form-control-sm"
+                                   value="{{ config.usuario }}" autocomplete="off">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small">Senha</label>
+                            <input type="password" name="senha" class="form-control form-control-sm"
+                                   value="{{ config.senha }}" autocomplete="off">
+                        </div>
+                    </div>
+
+                    <div class="row g-2 mt-1">
+                        <div class="col-md-3">
+                            <label class="form-label small">CPF (3 prim.)</label>
+                            <input type="text" name="cpf_primeiros" class="form-control form-control-sm"
+                                   value="{{ config.cpf_primeiros }}">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small">CPF (3 últ.)</label>
+                            <input type="text" name="cpf_ultimos" class="form-control form-control-sm"
+                                   value="{{ config.cpf_ultimos }}">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small">RG (3 prim.)</label>
+                            <input type="text" name="rg_primeiros" class="form-control form-control-sm"
+                                   value="{{ config.rg_primeiros }}">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small">RG (3 últ.)</label>
+                            <input type="text" name="rg_ultimos" class="form-control form-control-sm"
+                                   value="{{ config.rg_ultimos }}">
+                        </div>
+                    </div>
+
+                    <div class="row g-2 mt-1">
+                        <div class="col-md-4">
+                            <label class="form-label small">Origem</label>
+                            <select name="origem" class="form-select form-select-sm">
+                                <option value="CRM" {% if config.origem == 'CRM' %}selected{% endif %}>CRM</option>
+                                <option value="CRO" {% if config.origem == 'CRO' %}selected{% endif %}>CRO</option>
+                                <option value="COREN" {% if config.origem == 'COREN' %}selected{% endif %}>COREN</option>
+                                <option value="CRF" {% if config.origem == 'CRF' %}selected{% endif %}>CRF</option>
+                                <option value="CRP" {% if config.origem == 'CRP' %}selected{% endif %}>CRP</option>
+                            </select>
+                        </div>
+                        <div class="col-md-8 d-flex align-items-end">
+                            <button type="submit" class="btn btn-sm btn-outline-primary w-100">
+                                <i class="bi bi-save"></i> Salvar Credenciais
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Status da sessão + Login -->
+        <div class="card">
+            <div class="card-header"><i class="bi bi-person-check"></i> Sessão SIRESP</div>
+            <div class="card-body">
+
+                <div id="status-box" class="alert alert-secondary py-2 mb-3">
+                    <span id="status-icon">⏳</span>
+                    <span id="status-text">Verificando...</span>
+                </div>
+
+                <div class="d-flex gap-2">
+                    <button id="btn-login" class="btn btn-primary flex-grow-1" onclick="fazerLogin()">
+                        <i class="bi bi-box-arrow-in-right"></i> Fazer Login
+                    </button>
+                    <button id="btn-fechar" class="btn btn-outline-danger" onclick="fecharSessao()">
+                        <i class="bi bi-x-circle"></i> Fechar
+                    </button>
+                </div>
+
+                <div class="small text-muted mt-2">
+                    Sessões ativas: <span id="sessoes-ativas">{{ sessoes_ativas }}</span>
+                    / {{ limite_sessoes }}
+                </div>
+
+            </div>
+        </div>
+
+    </div>
+
+    <!-- COLUNA DIREITA -->
+    <div class="col-lg-7">
+
+        <!-- Busca -->
+        <div class="card mb-3">
+            <div class="card-header"><i class="bi bi-search"></i> 1. Buscar Médicos</div>
+            <div class="card-body">
+                <div class="row g-2 mb-2">
+                    <div class="col-md-8">
+                        <input type="text" id="input-busca" class="form-control"
+                               placeholder="Nome parcial do médico...">
+                    </div>
+                    <div class="col-md-4">
+                        <button class="btn btn-outline-primary w-100" onclick="buscarMedicos()">
+                            <i class="bi bi-search"></i> Buscar
+                        </button>
+                    </div>
+                </div>
+
+                <div id="lista-medicos" class="list-group" style="max-height: 200px; overflow-y: auto;">
+                    <div class="text-muted small p-2">Nenhum médico buscado ainda.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Período + Extrair -->
+        <div class="card">
+            <div class="card-header"><i class="bi bi-calendar-range"></i> 2. Período e Extração</div>
+            <div class="card-body">
+
+                <div id="medico-selecionado" class="alert alert-light border py-2 mb-3">
+                    Nenhum médico selecionado.
+                </div>
+
+                <div class="row g-2 mb-3">
+                    <div class="col-md-5">
+                        <label class="form-label small">Data inicial</label>
+                        <input type="text" id="data-ini" class="form-control"
+                               placeholder="DD/MM/AAAA" maxlength="10">
+                    </div>
+                    <div class="col-md-5">
+                        <label class="form-label small">Data final</label>
+                        <input type="text" id="data-fim" class="form-control"
+                               placeholder="DD/MM/AAAA" maxlength="10">
+                    </div>
+                    <div class="col-md-2 d-flex align-items-end">
+                        <button id="btn-extrair" class="btn btn-success w-100"
+                                onclick="extrair()" disabled>
+                            <i class="bi bi-play-fill"></i> Extrair
+                        </button>
+                    </div>
+                </div>
+
+                <div id="progresso" class="d-none">
+                    <div class="progress" style="height: 6px;">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated"
+                             style="width: 100%"></div>
+                    </div>
+                    <p class="small text-muted mt-2 mb-0" id="progresso-texto">
+                        Extraindo... aguarde (pode levar 1-2 minutos).
+                    </p>
+                </div>
+
+            </div>
+        </div>
+
+    </div>
+
+</div>
+
+<!-- Modal de CAPTCHA -->
+<div class="modal fade" id="modalCaptcha" data-bs-backdrop="static"
+     data-bs-keyboard="false" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title">
+                    <i class="bi bi-shield-lock"></i> Digite o CAPTCHA
+                </h5>
+            </div>
+            <div class="modal-body text-center">
+                <p class="small text-muted mb-3">
+                    Digite o texto da imagem abaixo para completar o login.
+                </p>
+
+                <div id="captcha-loading" class="text-muted">
+                    <div class="spinner-border spinner-border-sm"></div>
+                    Carregando CAPTCHA...
+                </div>
+
+                <img id="captcha-img" src="" alt="CAPTCHA"
+                     style="display:none; max-width:100%; border: 1px solid #ddd;
+                            border-radius: 4px; background: white; padding: 10px;">
+
+                <div class="mt-3">
+                    <div class="input-group">
+                        <input type="text" id="captcha-input" class="form-control form-control-lg text-center"
+                               placeholder="Digite o texto aqui"
+                               maxlength="10" autocomplete="off">
+                        <button class="btn btn-outline-secondary" type="button"
+                                onclick="recarregarCaptcha()"
+                                id="btn-recarregar-captcha"
+                                title="Não conseguiu ler? Gerar novo CAPTCHA">
+                            <i class="bi bi-arrow-clockwise"></i> Novo
+                        </button>
+                    </div>
+                    <small class="text-muted d-block mt-1">
+                        Não conseguiu ler?
+                        <a href="#" onclick="recarregarCaptcha(); return false;">
+                            Gerar uma nova imagem
+                        </a>
+                        &nbsp;·&nbsp;
+                        <span class="text-muted">F5 também recarrega</span>
+                    </small>
+                </div>
+
+                <div id="captcha-erro" class="alert alert-danger mt-2 py-2 small"
+                     style="display:none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="cancelarCaptcha()">
+                    Cancelar
+                </button>
+                <button type="button" class="btn btn-primary" onclick="enviarCaptcha()">
+                    <i class="bi bi-check-lg"></i> Enviar
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Log -->
+<div class="card mt-3">
+    <div class="card-header d-flex justify-content-between">
+        <span><i class="bi bi-terminal"></i> Log</span>
+        <button class="btn btn-sm btn-outline-secondary"
+                onclick="document.getElementById('log-debug').textContent = 'Log limpo.';">Limpar</button>
+    </div>
+    <div class="card-body p-2">
+        <pre id="log-debug" style="max-height: 150px; overflow-y: auto; font-size: 11px;
+             margin: 0; background: #f8f9fa; padding: 8px; border-radius: 4px;">Aguardando ações...</pre>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// =========================================================
+// ESTADO
+// =========================================================
+let medicoSelecionado = null;
+let extracaoAtual = null;
+let intervalStatus = null;
+let modalCaptcha = null;
+let captchaMostrado = 0;
+
+// =========================================================
+// LOG
+// =========================================================
+function log(msg) {
+    const el = document.getElementById('log-debug');
+    const ts = new Date().toLocaleTimeString('pt-BR');
+    el.textContent = `[${ts}] ${msg}\n` + el.textContent;
+    el.textContent = el.textContent.split('\n').slice(0, 40).join('\n');
+}
+
+// =========================================================
+// CSRF
+// =========================================================
+function getCookie(name) {
+    let v = null;
+    if (document.cookie) {
+        for (let c of document.cookie.split(';')) {
+            c = c.trim();
+            if (c.startsWith(name + '=')) {
+                v = decodeURIComponent(c.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return v;
+}
+const CSRF = getCookie('csrftoken');
+
+function postJSON(url, body) {
+    return fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': CSRF,
+        },
+        body: JSON.stringify(body || {}),
+    }).then(r => r.json());
+}
+
+// =========================================================
+// MODAL DE CAPTCHA
+// =========================================================
+function abrirModalCaptcha(b64, captchaId) {
+    const img = document.getElementById('captcha-img');
+    const loading = document.getElementById('captcha-loading');
+    const input = document.getElementById('captcha-input');
+    const erro = document.getElementById('captcha-erro');
+
+    img.src = b64;
+    img.style.display = 'block';
+    loading.style.display = 'none';
+    erro.style.display = 'none';
+    input.value = '';
+    input.focus();
+
+    captchaMostrado = captchaId;
+
+    if (!modalCaptcha) {
+        modalCaptcha = new bootstrap.Modal(document.getElementById('modalCaptcha'));
+    }
+    modalCaptcha.show();
+}
+
+function fecharModalCaptcha() {
+    if (modalCaptcha) {
+        modalCaptcha.hide();
+    }
+}
+
+function cancelarCaptcha() {
+    if (!confirm('Cancelar o login? A sessão do Chrome será fechada.')) return;
+    fecharModalCaptcha();
+    fecharSessao();
+}
+
+function enviarCaptcha() {
+    const input = document.getElementById('captcha-input');
+    const erro = document.getElementById('captcha-erro');
+    const texto = input.value.trim();
+
+    if (!texto) {
+        erro.textContent = 'Digite o texto do CAPTCHA.';
+        erro.style.display = 'block';
+        return;
+    }
+
+    erro.style.display = 'none';
+
+    const btn = event.target.closest('button');
+    if (btn) btn.disabled = true;
+
+    log(`→ Enviando CAPTCHA: "${texto}"`);
+
+    postJSON('{% url "siresp_app:producao_enviar_captcha" %}', { captcha: texto })
+        .then(data => {
+            log('← ' + JSON.stringify(data));
+
+            if (!data.ok) {
+                erro.textContent = data.mensagem || 'Erro.';
+                erro.style.display = 'block';
+                if (btn) btn.disabled = false;
+                return;
+            }
+
+            fecharModalCaptcha();
+
+            const box = document.getElementById('status-box');
+            const icon = document.getElementById('status-icon');
+            const text = document.getElementById('status-text');
+            box.className = 'alert alert-warning py-2 mb-3';
+            icon.textContent = '⏳';
+            text.textContent = 'Validando CAPTCHA...';
+
+            captchaMostrado = 0;
+        })
+        .catch(e => {
+            erro.textContent = 'Erro: ' + e;
+            erro.style.display = 'block';
+            if (btn) btn.disabled = false;
+            log('❌ ' + e);
+        });
+}
+
+// =========================================================
+// RECARREGAR CAPTCHA
+// =========================================================
+function recarregarCaptcha() {
+    const btn = document.getElementById('btn-recarregar-captcha');
+    const img = document.getElementById('captcha-img');
+    const loading = document.getElementById('captcha-loading');
+    const input = document.getElementById('captcha-input');
+    const erro = document.getElementById('captcha-erro');
+
+    if (btn) btn.disabled = true;
+    img.style.display = 'none';
+    loading.style.display = 'block';
+    erro.style.display = 'none';
+    input.value = '';
+
+    log('→ Recarregando CAPTCHA...');
+
+    postJSON('{% url "siresp_app:producao_recarregar_captcha" %}')
+        .then(data => {
+            log('← ' + JSON.stringify(data).substring(0, 200));
+
+            if (!data.ok) {
+                erro.textContent = data.mensagem || 'Erro ao recarregar.';
+                erro.style.display = 'block';
+                if (img.src && img.src.length > 100) {
+                    img.style.display = 'block';
+                    loading.style.display = 'none';
+                }
+                if (btn) btn.disabled = false;
+                return;
+            }
+
+            img.src = data.captcha_b64;
+            img.style.display = 'block';
+            loading.style.display = 'none';
+
+            captchaMostrado = data.captcha_id;
+
+            input.focus();
+
+            if (btn) btn.disabled = false;
+        })
+        .catch(e => {
+            erro.textContent = 'Erro: ' + e;
+            erro.style.display = 'block';
+            if (btn) btn.disabled = false;
+            log('❌ ' + e);
+        });
+}
+
+document.getElementById('captcha-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        enviarCaptcha();
+    }
+});
+
+// F5 recarrega captcha dentro do modal
+document.addEventListener('keydown', function(e) {
+    const modalEl = document.getElementById('modalCaptcha');
+    if (!modalEl || !modalEl.classList.contains('show')) return;
+
+    if (e.key === 'F5' || (e.ctrlKey && e.key.toLowerCase() === 'r')) {
+        e.preventDefault();
+        recarregarCaptcha();
+    }
+});
+
+// =========================================================
+// STATUS
+// =========================================================
+function atualizarStatus() {
+    fetch('{% url "siresp_app:producao_status_login" %}')
+        .then(r => r.json())
+        .then(data => {
+            const box = document.getElementById('status-box');
+            const icon = document.getElementById('status-icon');
+            const text = document.getElementById('status-text');
+            const btnLogin = document.getElementById('btn-login');
+
+            box.className = 'alert py-2 mb-3';
+
+            if (data.estado === 'logado') {
+                box.classList.add('alert-success');
+                icon.textContent = '✅';
+                text.textContent = 'Logado no SIRESP';
+                btnLogin.disabled = true;
+                btnLogin.innerHTML = '<i class="bi bi-check-circle"></i> Logado';
+                fecharModalCaptcha();
+
+            } else if (data.estado === 'aguardando_captcha') {
+                box.classList.add('alert-warning');
+                icon.textContent = '🔐';
+                text.textContent = 'Digite o CAPTCHA';
+                btnLogin.disabled = true;
+                btnLogin.innerHTML = '<i class="bi bi-shield-lock"></i> Aguardando CAPTCHA';
+
+                if (data.captcha_b64 && data.captcha_id !== captchaMostrado && data.captcha_id > 0) {
+                    abrirModalCaptcha(data.captcha_b64, data.captcha_id);
+                }
+
+            } else if (data.estado === 'abrindo') {
+                box.classList.add('alert-warning');
+                icon.textContent = '⏳';
+                text.textContent = 'Abrindo navegador...';
+                btnLogin.disabled = true;
+                btnLogin.innerHTML = '<i class="bi bi-hourglass-split"></i> Abrindo...';
+
+            } else {
+                box.classList.add('alert-secondary');
+                icon.textContent = '⚪';
+                text.textContent = 'Não logado';
+                btnLogin.disabled = false;
+                btnLogin.innerHTML = '<i class="bi bi-box-arrow-in-right"></i> Fazer Login';
+                fecharModalCaptcha();
+            }
+
+            validarExtracao();
+        })
+        .catch(e => log('❌ Erro no status: ' + e));
+}
+
+intervalStatus = setInterval(atualizarStatus, 2000);
+atualizarStatus();
+
+// =========================================================
+// LOGIN
+// =========================================================
+function fazerLogin() {
+    const btn = document.getElementById('btn-login');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Abrindo Chrome (headless)...';
+    log('→ Solicitando login SIRESP...');
+
+    const img = document.getElementById('captcha-img');
+    const loading = document.getElementById('captcha-loading');
+    img.style.display = 'none';
+    loading.style.display = 'block';
+
+    if (!modalCaptcha) {
+        modalCaptcha = new bootstrap.Modal(document.getElementById('modalCaptcha'));
+    }
+    modalCaptcha.show();
+
+    postJSON('{% url "siresp_app:producao_login" %}')
+        .then(data => {
+            log('← Resposta login: ' + JSON.stringify(data).substring(0, 200));
+
+            if (!data.ok) {
+                alert(data.mensagem || 'Erro ao iniciar login.');
+                fecharModalCaptcha();
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-box-arrow-in-right"></i> Fazer Login';
+                return;
+            }
+
+            if (data.captcha_b64) {
+                abrirModalCaptcha(data.captcha_b64, data.captcha_id);
+            }
+            atualizarStatus();
+        })
+        .catch(e => {
+            alert('Erro: ' + e);
+            fecharModalCaptcha();
+            btn.disabled = false;
+            log('❌ ' + e);
+        });
+}
+
+// =========================================================
+// FECHAR SESSÃO
+// =========================================================
+function fecharSessao() {
+    if (!confirm('Fechar a sessão SIRESP?')) return;
+
+    log('→ Fechando sessão...');
+    postJSON('{% url "siresp_app:producao_fechar" %}')
+        .then(data => {
+            log('← ' + JSON.stringify(data));
+            alert(data.mensagem || 'Sessão fechada.');
+            atualizarStatus();
+        })
+        .catch(e => log('❌ ' + e));
+}
+
+// =========================================================
+// BUSCAR MÉDICOS
+// =========================================================
+function buscarMedicos() {
+    const nome = document.getElementById('input-busca').value.trim();
+    if (!nome) {
+        alert('Digite parte do nome do médico.');
+        return;
+    }
+
+    const lista = document.getElementById('lista-medicos');
+    lista.innerHTML = '<div class="text-muted small p-2">Buscando...</div>';
+    log('→ Buscando médicos: "' + nome + '"');
+
+    fetch('{% url "siresp_app:producao_buscar_medicos" %}?nome=' + encodeURIComponent(nome))
+        .then(r => r.json())
+        .then(data => {
+            log('← Busca: ' + JSON.stringify(data).substring(0, 500));
+
+            if (!data.ok) {
+                lista.innerHTML = '<div class="alert alert-danger small p-2 mb-0">' +
+                    '<strong>Erro:</strong> ' + (data.mensagem || 'Erro') + '</div>';
+                return;
+            }
+
+            if (!data.medicos || !data.medicos.length) {
+                lista.innerHTML = '<div class="alert alert-warning small p-2 mb-0">' +
+                    'Nenhum médico encontrado.</div>';
+                return;
+            }
+
+            lista.innerHTML = '';
+            data.medicos.forEach(m => {
+                const item = document.createElement('button');
+                item.type = 'button';
+                item.className = 'list-group-item list-group-item-action small';
+                item.innerHTML = `<strong>${m.nome}</strong>
+                    <span class="text-muted"> — CRM: ${m.crm || '-'} | Cód: ${m.codigo || '-'}</span>`;
+                item.onclick = () => selecionarMedico(m, item);
+                lista.appendChild(item);
+            });
+            log(`✅ ${data.medicos.length} médicos encontrados`);
+        })
+        .catch(e => {
+            log('❌ Erro no fetch: ' + e);
+            lista.innerHTML = '<div class="alert alert-danger small p-2 mb-0">Erro: ' + e + '</div>';
+        });
+}
+
+function selecionarMedico(m, element) {
+    medicoSelecionado = m;
+
+    document.querySelectorAll('#lista-medicos .list-group-item').forEach(el => {
+        el.classList.remove('active');
+    });
+    element.classList.add('active');
+
+    document.getElementById('medico-selecionado').innerHTML =
+        `<i class="bi bi-person-check"></i> Selecionado: <strong>${m.nome}</strong> ` +
+        `<span class="text-muted">(CRM: ${m.crm || '-'} | Cód: ${m.codigo || '-'})</span>`;
+
+    log('👤 Médico selecionado: ' + m.nome);
+    validarExtracao();
+}
+
+// =========================================================
+// EXTRAIR
+// =========================================================
+function extrair() {
+    if (!medicoSelecionado) return;
+
+    const dataIni = document.getElementById('data-ini').value.trim();
+    const dataFim = document.getElementById('data-fim').value.trim();
+
+    if (!dataIni || !dataFim) {
+        alert('Preencha as duas datas.');
+        return;
+    }
+
+    document.getElementById('btn-extrair').disabled = true;
+    document.getElementById('progresso').classList.remove('d-none');
+    log(`→ Extraindo ${medicoSelecionado.nome} de ${dataIni} a ${dataFim}`);
+
+    postJSON('{% url "siresp_app:producao_extrair" %}', {
+        medico: medicoSelecionado,
+        data_ini: dataIni,
+        data_fim: dataFim,
+    })
+    .then(data => {
+        log('← Extração: ' + JSON.stringify(data));
+
+        if (!data.ok) {
+            alert(data.mensagem || 'Erro ao iniciar extração.');
+            document.getElementById('btn-extrair').disabled = false;
+            document.getElementById('progresso').classList.add('d-none');
+            return;
+        }
+
+        extracaoAtual = data.extracao_id;
+        document.getElementById('progresso-texto').textContent =
+            'Extração iniciada... (pode levar 1-2 minutos)';
+
+        monitorarExtracao(data.extracao_id);
+    })
+    .catch(e => {
+        log('❌ ' + e);
+        alert('Erro: ' + e);
+        document.getElementById('btn-extrair').disabled = false;
+        document.getElementById('progresso').classList.add('d-none');
+    });
+}
+
+function monitorarExtracao(id) {
+    const check = setInterval(() => {
+        fetch('/producao/status-extracao/' + id + '/')
+            .then(r => r.json())
+            .then(data => {
+                if (data.finalizada) {
+                    clearInterval(check);
+                    document.getElementById('progresso-texto').textContent =
+                        `✅ ${data.total_itens} itens extraídos! Redirecionando...`;
+                    log(`✅ Extração ${id} finalizada`);
+                    setTimeout(() => {
+                        window.location.href = '/producao/ver/' + id + '/';
+                    }, 800);
+                }
+            })
+            .catch(e => log('❌ Erro no polling: ' + e));
+    }, 2000);
+}
+
+// =========================================================
+// MÁSCARA DE DATA
+// =========================================================
+['data-ini', 'data-fim'].forEach(id => {
+    const el = document.getElementById(id);
+    el.addEventListener('input', () => {
+        let v = el.value.replace(/\D/g, '').slice(0, 8);
+        if (v.length >= 5) {
+            v = v.slice(0, 2) + '/' + v.slice(2, 4) + '/' + v.slice(4);
+        } else if (v.length >= 3) {
+            v = v.slice(0, 2) + '/' + v.slice(2);
+        }
+        el.value = v;
+        validarExtracao();
+    });
+});
+
+// =========================================================
+// VALIDAÇÃO
+// =========================================================
+function validarExtracao() {
+    const ini = document.getElementById('data-ini').value.trim();
+    const fim = document.getElementById('data-fim').value.trim();
+    const btn = document.getElementById('btn-extrair');
+    const btnLogin = document.getElementById('btn-login');
+    const logado = btnLogin && btnLogin.disabled &&
+                   btnLogin.innerHTML.includes('Logado');
+
+    btn.disabled = !(medicoSelecionado && ini.length === 10 && fim.length === 10 && logado);
+}
+
+log('Página carregada — modo HEADLESS');
+</script>
+{% endblock %}

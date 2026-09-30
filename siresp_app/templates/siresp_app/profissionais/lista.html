@@ -1,0 +1,140 @@
+{% extends "siresp_app/base.html" %}
+
+{% block title %}Profissionais{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2><i class="bi bi-people"></i> Profissionais</h2>
+    <a href="{% url 'siresp_app:config_importar' %}" class="btn btn-outline-primary">
+        <i class="bi bi-upload"></i> Importar planilha de agendas
+    </a>
+</div>
+
+{% include "siresp_app/_modo_consulta.html" %}
+<div class="alert alert-info small">
+    A base é preenchida automaticamente ao importar a planilha de agendas.
+    Abaixo você vê, para o mês escolhido, quem já teve repasse e quem ainda está pendente.
+</div>
+
+<form method="get" class="row g-2 mb-3">
+    <div class="col-auto">
+        <select name="mes" class="form-select">
+            {% for n, nome in meses %}
+            <option value="{{ n }}" {% if n == mes %}selected{% endif %}>{{ nome }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-auto">
+        <select name="ano" class="form-select">
+            {% for a in anos %}
+            <option value="{{ a }}" {% if a == ano %}selected{% endif %}>{{ a }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-auto">
+        <button class="btn btn-primary"><i class="bi bi-funnel"></i> Ver mês</button>
+    </div>
+</form>
+
+<div class="d-flex flex-wrap gap-2 mb-3">
+    <a class="btn btn-sm btn-outline-secondary {% if not filtro %}active{% endif %}"
+       href="?mes={{ mes }}&ano={{ ano }}">Todos</a>
+    <a class="btn btn-sm btn-outline-danger {% if filtro == 'pendente' %}active{% endif %}"
+       href="?mes={{ mes }}&ano={{ ano }}&status=pendente">
+        Sem repasse <span class="badge bg-danger">{{ contagem.pendente }}</span></a>
+    <a class="btn btn-sm btn-outline-info {% if filtro == 'extraido' %}active{% endif %}"
+       href="?mes={{ mes }}&ano={{ ano }}&status=extraido">
+        Extraído, sem repasse <span class="badge bg-info text-dark">{{ contagem.extraido }}</span></a>
+    <a class="btn btn-sm btn-outline-warning {% if filtro == 'rascunho' %}active{% endif %}"
+       href="?mes={{ mes }}&ano={{ ano }}&status=rascunho">
+        Em rascunho <span class="badge bg-warning text-dark">{{ contagem.rascunho }}</span></a>
+    <a class="btn btn-sm btn-outline-success {% if filtro == 'finalizado' %}active{% endif %}"
+       href="?mes={{ mes }}&ano={{ ano }}&status=finalizado">
+        Finalizado <span class="badge bg-success">{{ contagem.finalizado }}</span></a>
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-9">
+        <div class="card">
+            <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr><th>Profissional</th><th>Situação no mês</th><th class="text-end">Ações</th></tr>
+                    </thead>
+                    <tbody>
+                    {% for s in situacoes %}
+                        <tr>
+                            <td>{{ s.profissional.nome }}</td>
+                            <td>
+                                {% if s.status == 'finalizado' %}<span class="badge bg-success">Finalizado</span>
+                                {% elif s.status == 'rascunho' %}<span class="badge bg-warning text-dark">Rascunho</span>
+                                {% elif s.status == 'extraido' %}<span class="badge bg-info text-dark">Extraído, sem repasse</span>
+                                {% else %}<span class="badge bg-danger">Sem repasse</span>{% endif %}
+                            </td>
+                            <td class="text-end">
+                                {% if s.repasse_pk %}
+                                <a class="btn btn-sm btn-outline-primary"
+                                   href="{% url 'siresp_app:repasse_ver' s.repasse_pk %}">Abrir repasse</a>
+                                {% elif s.extracao_pk %}
+                                <a class="btn btn-sm btn-outline-primary"
+                                   href="{% url 'siresp_app:producao_ir_repasse' s.extracao_pk %}">Criar repasse</a>
+                                {% endif %}
+                                {% if eh_admin %}
+                                <form method="post" class="d-inline"
+                                      action="{% url 'siresp_app:profissionais_alternar' s.profissional.pk %}">
+                                    {% csrf_token %}
+                                    <button class="btn btn-sm btn-outline-secondary" title="Desativar (não cobrar repasse)">
+                                        <i class="bi bi-eye-slash"></i></button>
+                                </form>
+                                <form method="post" class="d-inline"
+                                      action="{% url 'siresp_app:profissionais_remover' s.profissional.pk %}"
+                                      onsubmit="return confirm('Remover da base?');">
+                                    {% csrf_token %}
+                                    <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                                </form>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="3" class="text-muted p-3">
+                            Nenhum profissional{% if not total_base %} na base. Importe a planilha de agendas.{% endif %}
+                        </td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-3">
+        {% if eh_admin %}
+        <div class="card mb-3">
+            <div class="card-header">Adicionar à base</div>
+            <div class="card-body">
+                <form method="post" action="{% url 'siresp_app:profissionais_novo' %}">
+                    {% csrf_token %}
+                    <input name="nome" class="form-control form-control-sm mb-2" placeholder="Nome completo" required>
+                    <button class="btn btn-sm btn-primary w-100">Adicionar</button>
+                </form>
+            </div>
+        </div>
+        {% endif %}
+        {% if inativos and eh_admin %}
+        <div class="card">
+            <div class="card-header">Desativados</div>
+            <ul class="list-group list-group-flush small">
+                {% for p in inativos %}
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    {{ p.nome }}
+                    <form method="post" action="{% url 'siresp_app:profissionais_alternar' p.pk %}">
+                        {% csrf_token %}
+                        <button class="btn btn-sm btn-outline-success">Reativar</button>
+                    </form>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

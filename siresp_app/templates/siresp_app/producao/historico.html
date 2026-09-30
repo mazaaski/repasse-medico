@@ -41,6 +41,7 @@
                     <tr>
                         <th class="text-center" style="width: 40px;">✔</th>
                         <th>Data</th>
+                        <th>Usuário</th>
                         <th>Médico</th>
                         <th>CRM</th>
                         <th>Código</th>
@@ -55,10 +56,11 @@
                     {% with e=linha.obj r=linha.repasse %}
                     <tr>
                         <td class="text-center">
-                            <input type="checkbox" name="extracao_ids" value="{{ e.pk }}"
-                                   class="form-check-input chk-extracao">
+                            {% if linha.dono %}<input type="checkbox" name="extracao_ids" value="{{ e.pk }}"
+                                   class="form-check-input chk-extracao">{% else %}<i class="bi bi-eye text-muted" title="Extração de outro usuário (consulta)"></i>{% endif %}
                         </td>
                         <td class="small">{{ e.criada_em|date:"d/m/Y H:i" }}</td>
+                        <td class="small">{{ e.usuario_web.username }}{% if linha.dono %} <span class="badge bg-light text-dark border">você</span>{% endif %}</td>
                         <td><strong>{{ e.medico_nome }}</strong></td>
                         <td class="small">{{ e.medico_crm|default:"-" }}</td>
                         <td class="small">{{ e.medico_codigo|default:"-" }}</td>
@@ -98,17 +100,19 @@
                                class="btn btn-sm btn-outline-info" title="JSON">
                                 <i class="bi bi-filetype-json"></i>
                             </a>
+                            {% if linha.dono or r.existe %}
                             <a href="{% url 'siresp_app:producao_ir_repasse' e.pk %}"
                                class="btn btn-sm btn-outline-warning"
                                title="{% if r.existe %}Abrir repasse{% else %}Criar repasse{% endif %}">
                                 <i class="bi bi-cash-coin"></i>
                             </a>
+                            {% endif %}
                         </td>
                     </tr>
                     {% endwith %}
                     {% empty %}
                     <tr>
-                        <td colspan="9" class="text-center text-muted p-4">
+                        <td colspan="10" class="text-center text-muted p-4">
                             Nenhuma extração no histórico.
                         </td>
                     </tr>

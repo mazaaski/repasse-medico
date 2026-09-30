@@ -24,42 +24,74 @@
         </button>
         <div class="collapse navbar-collapse" id="menuTopo">
             <ul class="navbar-nav me-auto">
+                {% with n=request.resolver_match.url_name %}
                 <li class="nav-item">
-                    <a class="nav-link" href="{% url 'siresp_app:producao_home' %}">
-                        <i class="bi bi-clipboard2-pulse"></i> Produção
+                    <a class="nav-link {% if n == 'home' %}active fw-bold{% endif %}" href="{% url 'siresp_app:home' %}">
+                        <i class="bi bi-house"></i> Início
                     </a>
                 </li>
                 <li class="nav-item">
-                    <a class="nav-link" href="{% url 'siresp_app:config_lista' %}">
-                        <i class="bi bi-gear"></i> Configurações
+                    <a class="nav-link {% if n|slice:':9' == 'producao_' and n != 'producao_ir_repasse' %}active fw-bold{% endif %}"
+                       href="{% url 'siresp_app:producao_home' %}">
+                        <i class="bi bi-clipboard2-pulse"></i> 1. Produção
                     </a>
                 </li>
                 <li class="nav-item">
-                    <a class="nav-link" href="{% url 'siresp_app:config_importar' %}">
-                        <i class="bi bi-upload"></i> Importar Planilha
+                    <a class="nav-link {% if n|slice:':8' == 'repasse_' %}active fw-bold{% endif %}"
+                       href="{% url 'siresp_app:repasse_lote' %}">
+                        <i class="bi bi-cash-stack"></i> 2. Repasse em Lote
                     </a>
                 </li>
                 <li class="nav-item">
-                    <a class="nav-link" href="{% url 'siresp_app:config_regras' %}">
-                        <i class="bi bi-list-check"></i> Regras
+                    <a class="nav-link {% if n|slice:':10' == 'relatorios' %}active fw-bold{% endif %}"
+                       href="{% url 'siresp_app:relatorios_home' %}">
+                        <i class="bi bi-bar-chart"></i> 3. Relatórios
                     </a>
                 </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="{% url 'siresp_app:producao_historico' %}">
-                        <i class="bi bi-clock-history"></i> Histórico
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle {% if n|slice:':7' == 'config_' or n|slice:':13' == 'profissionais' or n|slice:':7' == 'equipes' %}active fw-bold{% endif %}"
+                       href="#" data-bs-toggle="dropdown">
+                        <i class="bi bi-gear"></i> Cadastros
                     </a>
+                    <ul class="dropdown-menu">
+                        <li><a class="dropdown-item" href="{% url 'siresp_app:profissionais_lista' %}">
+                            <i class="bi bi-people"></i> Profissionais</a></li>
+                        <li><a class="dropdown-item" href="{% url 'siresp_app:equipes_lista' %}">
+                            <i class="bi bi-people-fill"></i> Equipes médicas</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="{% url 'siresp_app:config_importar' %}">
+                            <i class="bi bi-upload"></i> Importar planilha de agendas
+                            {% if not eh_admin %}<span class="badge bg-light text-muted border">consulta</span>{% endif %}</a></li>
+                        <li><a class="dropdown-item" href="{% url 'siresp_app:config_regras' %}">
+                            <i class="bi bi-list-check"></i> Regras de minutos
+                            {% if not eh_admin %}<span class="badge bg-light text-muted border">consulta</span>{% endif %}</a></li>
+                        <li><a class="dropdown-item" href="{% url 'siresp_app:config_lista' %}">
+                            <i class="bi bi-currency-dollar"></i> Grupos de valores
+                            {% if not eh_admin %}<span class="badge bg-light text-muted border">consulta</span>{% endif %}</a></li>
+                    </ul>
                 </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="{% url 'siresp_app:relatorios_home' %}">
-                        <i class="bi bi-bar-chart"></i> Relatórios
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle {% if n|slice:':9' == 'auditoria' %}active fw-bold{% endif %}"
+                       href="#" data-bs-toggle="dropdown">
+                        <i class="bi bi-shield-check"></i> Administração
                     </a>
+                    <ul class="dropdown-menu">
+                        <li><a class="dropdown-item" href="{% url 'siresp_app:auditoria_lista' %}">
+                            <i class="bi bi-journal-text"></i> Auditoria (log de alterações)</a></li>
+                        {% if eh_admin %}
+                        <li><a class="dropdown-item" href="/admin/auth/user/">
+                            <i class="bi bi-person-gear"></i> Usuários e permissões</a></li>
+                        {% endif %}
+                    </ul>
                 </li>
+                {% endwith %}
             </ul>
             {% if user.is_authenticated %}
             <ul class="navbar-nav">
                 <li class="nav-item">
                     <span class="navbar-text me-3">
                         <i class="bi bi-person-circle"></i> {{ user.username }}
+                        <span class="badge {% if eh_admin %}bg-warning text-dark{% else %}bg-secondary{% endif %}">{% if eh_admin %}admin{% else %}usuário{% endif %}</span>
                     </span>
                 </li>
                 <li class="nav-item">

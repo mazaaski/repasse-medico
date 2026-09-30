@@ -151,10 +151,24 @@ def registrar_regras(linhas_planilha):
         if criada:
             novas_esp += 1
 
+    # Base de profissionais (nome original da primeira ocorrência)
+    from .profissionais_service import garantir_profissional
+    novos_prof = 0
+    vistos = set()
+    for prof, _esp, _min in linhas_planilha:
+        n = _normalizar(prof)
+        if not n or n in vistos:
+            continue
+        vistos.add(n)
+        _, criado = garantir_profissional(prof)
+        if criado:
+            novos_prof += 1
+
     return {
         'linhas': len(linhas_planilha),
         'pares': pares_atualizados,
         'novas_esp': novas_esp,
+        'novos_prof': novos_prof,
     }
 
 

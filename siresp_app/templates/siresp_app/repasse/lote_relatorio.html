@@ -1,0 +1,364 @@
+{% extends "siresp_app/base.html" %}
+
+{% block title %}Relatório do Lote{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2><i class="bi bi-clipboard-data"></i> Relatório e Edição do Lote</h2>
+    <div>
+        {% if todos_finalizados %}
+        <a href="{% url 'siresp_app:repasse_lote_relatorio_excel' %}?ids={{ ids }}" class="btn btn-success" onclick="return avisarSeSuja();">
+            <i class="bi bi-file-earmark-excel"></i> Exportar Excel
+        </a>
+        <a href="{% url 'siresp_app:repasse_lote_relatorio_pdf' %}?ids={{ ids }}" class="btn btn-danger" onclick="return avisarSeSuja();">
+            <i class="bi bi-file-earmark-pdf"></i> Exportar PDF
+        </a>
+        {% else %}
+        <button class="btn btn-success" disabled title="Finalize os repasses para liberar o Excel">
+            <i class="bi bi-file-earmark-excel"></i> Exportar Excel
+        </button>
+        <button class="btn btn-danger" disabled title="Finalize os repasses para liberar o PDF">
+            <i class="bi bi-file-earmark-pdf"></i> Exportar PDF
+        </button>
+        {% endif %}
+        <a href="{% url 'siresp_app:repasse_lote' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> Voltar
+        </a>
+    </div>
+</div>
+
+{% if todos_finalizados %}
+<div class="alert alert-success">
+    <i class="bi bi-lock-fill"></i> Todos os repasses deste relatório estão <strong>finalizados</strong>.
+    Excel e PDF liberados.
+</div>
+{% else %}
+<div class="alert alert-warning">
+    <form method="post" action="{% url 'siresp_app:repasse_lote_finalizar' %}"
+          class="d-flex flex-wrap align-items-center gap-2 mb-0"
+          onsubmit="return confirmarFinalizar();">
+        {% csrf_token %}
+        <input type="hidden" name="voltar" value="relatorio">
+        <input type="hidden" name="ids" value="{{ ids }}">
+        {% for b in blocos %}{% if not b.bloqueado %}
+        <input type="hidden" name="extracao_ids" value="{{ b.extracao.pk }}">
+        {% endif %}{% endfor %}
+        <div>
+            <strong>{{ qtd_rascunho }} repasse(s) em rascunho.</strong>
+            Edite o que precisar abaixo e <em>salve</em>. Quando estiver tudo certo, informe o mês que
+            está sendo pago e finalize para liberar Excel e PDF.
+            <div class="small text-muted">O repasse é feito no mês seguinte: pago em setembro = competência agosto.</div>
+        </div>
+        <div class="input-group ms-auto" style="width:auto;">
+            <span class="input-group-text">Competência</span>
+            <input type="month" name="competencia" class="form-control" required
+                   value="{{ competencia_padrao }}" max="{{ competencia_padrao }}">
+            <button class="btn btn-primary"><i class="bi bi-check-circle"></i> Finalizar e liberar Excel/PDF</button>
+        </div>
+    </form>
+</div>
+{% endif %}
+
+<div class="row g-3 mb-3">
+    <div class="col-md-3"><div class="card"><div class="card-body py-2">
+        <div class="small text-muted">Profissionais</div><div class="fs-4">{{ blocos|length }}</div></div></div></div>
+    <div class="col-md-3"><div class="card"><div class="card-body py-2">
+        <div class="small text-muted">Horas totais</div><div class="fs-4" id="tot-horas">{{ tot_horas|floatformat:"2g" }}</div></div></div></div>
+    <div class="col-md-3"><div class="card"><div class="card-body py-2">
+        <div class="small text-muted">Valor total</div><div class="fs-4 text-success">R$ <span id="tot-valor">{{ tot_valor|floatformat:"2g" }}</span></div></div></div></div>
+    <div class="col-md-3"><div class="card"><div class="card-body py-2">
+        <div class="small text-muted">Linhas sem regra</div>
+        <div class="fs-4 {% if qtd_sem_regra %}text-danger{% endif %}">{{ qtd_sem_regra }}</div></div></div></div>
+</div>
+
+<div class="d-flex align-items-center gap-3 mb-3 sticky-top bg-body py-2" style="top:0; z-index:5;">
+    <button id="btn-salvar" class="btn btn-primary" onclick="salvarEdicoes()" disabled>
+        <i class="bi bi-save"></i> Salvar edições
+    </button>
+    <span id="msg-salvar" class="small text-muted">
+        Edite minutos, valor base, bônus ou marque/desmarque linhas. Salvar não finaliza o repasse.
+    </span>
+</div>
+
+{% for g in grupos %}
+<div class="grupo {% if g.equipe %}border border-primary rounded p-2 mb-4{% endif %}"{% if g.equipe %} data-equipe="{{ g.equipe.pk }}"{% endif %}>
+{% if g.equipe %}
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+    <div>
+        <h5 class="mb-0"><i class="bi bi-people-fill text-primary"></i> Equipe {{ g.equipe.nome }}</h5>
+        <div class="small text-muted">
+            {% for b in g.itens %}{{ b.extracao.medico_nome }}{% if not forloop.last %} · {% endif %}{% endfor %}
+        </div>
+    </div>
+    <div class="fs-6">
+        <span class="badge bg-primary"><span class="eq-horas">{{ g.horas|floatformat:"2g" }}</span> h</span>
+        <span class="badge bg-success">Total da equipe: R$ <span class="eq-valor">{{ g.valor|floatformat:"2g" }}</span></span>
+    </div>
+</div>
+{% endif %}
+{% for b in g.itens %}
+{% with bloqueado=b.bloqueado %}
+<div class="card mb-3 bloco" data-repasse="{{ b.repasse.pk }}">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <div>
+            <strong>{{ b.extracao.medico_nome }}</strong>
+            <span class="text-muted small">— {{ b.extracao.data_ini }} a {{ b.extracao.data_fim }}</span>
+        </div>
+        <div>
+            {% if b.outro_dono %}<span class="badge bg-light text-dark border" title="Repasse de outro usuário: modo consulta"><i class="bi bi-eye"></i> {{ b.repasse.usuario_web.username }}</span>{% endif %}
+            {% if b.repasse.finalizado %}<span class="badge bg-success"><i class="bi bi-lock-fill"></i> Finalizado · {{ b.repasse.competencia_fmt }}</span>
+            {% else %}<span class="badge bg-warning text-dark">Rascunho</span>{% endif %}
+            <span class="badge bg-primary"><span class="sub-horas">{{ b.horas|floatformat:"2g" }}</span> h</span>
+            <span class="badge bg-success">R$ <span class="sub-valor">{{ b.valor|floatformat:"2g" }}</span></span>
+        </div>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-sm mb-0 small align-middle">
+            <thead class="table-light">
+                <tr><th style="width:36px;" title="Incluir no repasse"></th>
+                    <th>Especialidade</th><th>Grupo</th>
+                    <th style="width:80px;">Min</th><th style="width:110px;">Valor base</th>
+                    <th style="width:110px;">Bônus 100%</th><th style="width:90px;">Bônus %</th>
+                    <th class="text-end">Horas</th><th class="text-end">R$/h</th><th class="text-end">Total</th></tr>
+            </thead>
+            <tbody>
+            {% for i in b.itens %}
+                <tr class="linha {% if not i.marcado %}text-muted{% endif %}" data-id="{{ i.pk }}" data-oferta="{{ i.oferta }}">
+                    <td><input type="checkbox" class="form-check-input f-marcado" {% if i.marcado %}checked{% endif %}
+                               {% if bloqueado %}disabled{% endif %}></td>
+                    <td>{{ i.especialidade }}
+                        {% if i.faltou_regra %}<span class="badge bg-danger">sem regra</span>{% endif %}</td>
+                    <td>{{ i.grupo_nome }}</td>
+                    <td><input type="number" step="1" min="0" class="form-control form-control-sm f-minutos"
+                               value="{{ i.minutos|floatformat:0 }}" {% if bloqueado %}disabled{% endif %}></td>
+                    <td><input type="number" step="0.01" min="0" class="form-control form-control-sm f-valor_base"
+                               value="{{ i.valor_base|stringformat:'.2f' }}" {% if bloqueado %}disabled{% endif %}></td>
+                    <td><input type="number" step="0.01" min="0" class="form-control form-control-sm f-bonus_cheio"
+                               value="{{ i.bonus_cheio|stringformat:'.2f' }}" {% if bloqueado %}disabled{% endif %}></td>
+                    <td><select class="form-select form-select-sm f-bonus_percent" {% if bloqueado %}disabled{% endif %}>
+                        <option value="0%" {% if i.bonus_percent == '0%' %}selected{% endif %}>0%</option>
+                        <option value="50%" {% if i.bonus_percent == '50%' %}selected{% endif %}>50%</option>
+                        <option value="100%" {% if i.bonus_percent == '100%' %}selected{% endif %}>100%</option>
+                    </select></td>
+                    <td class="text-end c-horas">{{ i.horas_final|floatformat:"2g" }}</td>
+                    <td class="text-end c-valor_hora">{{ i.valor_hora|floatformat:"2g" }}</td>
+                    <td class="text-end c-total">R$ {{ i.total_final|floatformat:"2g" }}</td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="10" class="text-muted">Nenhuma linha.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% if b.ambiguas %}
+    <div class="card-footer small text-warning-emphasis">
+        <i class="bi bi-question-circle"></i> Mais de um valor de minutos cadastrado (usado o menor; confira):
+        {{ b.ambiguas|join:"; " }}
+    </div>
+    {% endif %}
+</div>
+{% endwith %}
+{% endfor %}
+</div>
+{% endfor %}
+
+<div class="card mb-4 border-success">
+    <div class="card-header bg-success text-white">
+        <i class="bi bi-receipt"></i> Resumo por faturamento (equipes e profissionais avulsos)
+    </div>
+    <div class="table-responsive">
+        <table class="table table-sm mb-0 align-middle">
+            <thead class="table-light">
+                <tr><th>Faturamento</th><th>Profissionais</th>
+                    <th class="text-end">Horas</th><th class="text-end">Valor (R$)</th></tr>
+            </thead>
+            <tbody>
+            {% for l in resumo %}
+                <tr class="res" {% if l.equipe %}data-equipe="{{ l.equipe_id }}"{% else %}data-repasse="{{ l.item_id }}"{% endif %}>
+                    <td>{% if l.equipe %}<i class="bi bi-people-fill text-primary"></i> <strong>{{ l.nome }}</strong>{% else %}{{ l.nome }}{% endif %}</td>
+                    <td class="small text-muted">{% if l.equipe %}{{ l.profissionais }}{% endif %}</td>
+                    <td class="text-end res-horas">{{ l.horas|floatformat:"2g" }}</td>
+                    <td class="text-end fw-bold res-valor">{{ l.valor|floatformat:"2g" }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+            <tfoot class="table-light fw-bold">
+                <tr><td colspan="2">TOTAL GERAL</td>
+                    <td class="text-end" id="res-tot-horas">{{ tot_horas|floatformat:"2g" }}</td>
+                    <td class="text-end text-success">R$ <span id="res-tot-valor">{{ tot_valor|floatformat:"2g" }}</span></td></tr>
+            </tfoot>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const CSRF_TOKEN = (document.cookie.split('; ').find(c => c.startsWith('csrftoken=')) || '').split('=')[1];
+const sujas = new Set();
+
+function fmt(n) {
+    return Number(n).toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+}
+function lerNumero(txt) {
+    return parseFloat(txt.replace(/\./g, '').replace(',', '.')) || 0;
+}
+
+function confirmarFinalizar() {
+    if (sujas.size) {
+        alert('Há edições não salvas. Clique em "Salvar edições" antes de finalizar.');
+        return false;
+    }
+    return confirm('Finalizar os repasses em rascunho? Isso trava as edições (dá para reabrir depois).');
+}
+
+function avisarSeSuja() {
+    if (sujas.size) {
+        alert('Há edições não salvas. Clique em "Salvar edições" antes de exportar o Excel.');
+        return false;
+    }
+    return true;
+}
+
+// Espelha ItemRepasse.recalcular() do servidor
+function arred(n) { return Math.round((n + Number.EPSILON) * 100) / 100; }
+
+function calcularLinha(tr) {
+    const num = sel => parseFloat(tr.querySelector(sel).value) || 0;
+    const perc = {'0%': 0, '50%': 0.5, '100%': 1}[tr.querySelector('.f-bonus_percent').value] || 0;
+    const valorHora = num('.f-valor_base') + arred(num('.f-bonus_cheio') * perc);
+    const horas = arred((parseFloat(tr.dataset.oferta) || 0) * num('.f-minutos') / 60);
+    const total = arred(horas * valorHora);
+    tr.querySelector('.c-horas').textContent = fmt(horas);
+    tr.querySelector('.c-valor_hora').textContent = fmt(valorHora);
+    tr.querySelector('.c-total').textContent = 'R$ ' + fmt(total);
+    tr.dataset.horas = horas;
+    tr.dataset.total = total;
+}
+
+function recalcularTotais() {
+    let h = 0, v = 0;
+    document.querySelectorAll('.bloco').forEach(bl => {
+        let bh = 0, bv = 0;
+        bl.querySelectorAll('tr.linha').forEach(tr => {
+            if (tr.querySelector('.f-marcado').checked) {
+                bh += parseFloat(tr.dataset.horas) || 0;
+                bv += parseFloat(tr.dataset.total) || 0;
+            }
+        });
+        bl.querySelector('.sub-horas').textContent = fmt(bh);
+        bl.querySelector('.sub-valor').textContent = fmt(bv);
+        h += bh; v += bv;
+    });
+    document.querySelectorAll('.grupo').forEach(gr => {
+        const eh = gr.querySelector('.eq-horas');
+        if (!eh) return;
+        let gh = 0, gv = 0;
+        gr.querySelectorAll('.bloco').forEach(bl => {
+            gh += lerNumero(bl.querySelector('.sub-horas').textContent);
+            gv += lerNumero(bl.querySelector('.sub-valor').textContent);
+        });
+        eh.textContent = fmt(gh);
+        gr.querySelector('.eq-valor').textContent = fmt(gv);
+    });
+    document.getElementById('tot-horas').textContent = fmt(h);
+    document.getElementById('tot-valor').textContent = fmt(v);
+    document.getElementById('res-tot-horas').textContent = fmt(h);
+    document.getElementById('res-tot-valor').textContent = fmt(v);
+
+    // Resumo por faturamento (fim da página)
+    document.querySelectorAll('tr.res').forEach(tr => {
+        let origem;
+        if (tr.dataset.equipe) {
+            const gr = document.querySelector('.grupo[data-equipe="' + tr.dataset.equipe + '"]');
+            origem = {h: gr.querySelector('.eq-horas'), v: gr.querySelector('.eq-valor')};
+        } else {
+            const bl = document.querySelector('.bloco[data-repasse="' + tr.dataset.repasse + '"]');
+            origem = {h: bl.querySelector('.sub-horas'), v: bl.querySelector('.sub-valor')};
+        }
+        tr.querySelector('.res-horas').textContent = origem.h.textContent;
+        tr.querySelector('.res-valor').textContent = origem.v.textContent;
+    });
+}
+
+function marcarSuja(tr) {
+    sujas.add(tr.dataset.id);
+    tr.classList.add('table-warning');
+    tr.classList.toggle('text-muted', !tr.querySelector('.f-marcado').checked);
+    document.getElementById('btn-salvar').disabled = false;
+    const msg = document.getElementById('msg-salvar');
+    msg.className = 'small text-muted';
+    msg.textContent = sujas.size + ' linha(s) com edição não salva.';
+}
+
+document.querySelectorAll('tr.linha').forEach(tr => {
+    // dataset inicial (valores vindos do servidor) para os subtotais ao vivo
+    tr.dataset.horas = lerNumero(tr.querySelector('.c-horas').textContent);
+    tr.dataset.total = lerNumero(tr.querySelector('.c-total').textContent.replace('R$', ''));
+    tr.querySelectorAll('input, select').forEach(el => {
+        const aoEditar = () => { calcularLinha(tr); recalcularTotais(); marcarSuja(tr); };
+        el.addEventListener('input', aoEditar);
+        el.addEventListener('change', aoEditar);
+    });
+});
+
+window.addEventListener('beforeunload', e => {
+    if (sujas.size) { e.preventDefault(); e.returnValue = ''; }
+});
+
+function dadosLinha(tr) {
+    return {
+        id: Number(tr.dataset.id),
+        marcado: tr.querySelector('.f-marcado').checked,
+        minutos: tr.querySelector('.f-minutos').value || 0,
+        valor_base: tr.querySelector('.f-valor_base').value || 0,
+        bonus_cheio: tr.querySelector('.f-bonus_cheio').value || 0,
+        bonus_percent: tr.querySelector('.f-bonus_percent').value,
+    };
+}
+
+function salvarEdicoes() {
+    const btn = document.getElementById('btn-salvar');
+    const msg = document.getElementById('msg-salvar');
+    const itens = Array.from(sujas).map(id =>
+        dadosLinha(document.querySelector('tr.linha[data-id="' + id + '"]')));
+    btn.disabled = true;
+    msg.textContent = 'Salvando...';
+
+    fetch('{% url "siresp_app:repasse_lote_salvar" %}', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN},
+        body: JSON.stringify({itens: itens}),
+    }).then(r => r.json()).then(data => {
+        (data.itens || []).forEach(it => {
+            const tr = document.querySelector('tr.linha[data-id="' + it.id + '"]');
+            tr.querySelector('.c-horas').textContent = fmt(it.horas_final);
+            tr.querySelector('.c-valor_hora').textContent = fmt(it.valor_hora);
+            tr.querySelector('.c-total').textContent = 'R$ ' + fmt(it.total_final);
+            tr.classList.remove('table-warning');
+            tr.classList.toggle('text-muted', !it.marcado);
+            sujas.delete(String(it.id));
+        });
+        (data.itens || []).forEach(it => {
+            const tr = document.querySelector('tr.linha[data-id="' + it.id + '"]');
+            tr.dataset.horas = it.horas_final;
+            tr.dataset.total = it.total_final;
+        });
+        recalcularTotais();
+
+        if (data.erros && data.erros.length) {
+            msg.className = 'small text-danger';
+            msg.textContent = '⚠️ ' + data.erros.join(' | ');
+        } else {
+            msg.className = 'small text-success';
+            msg.textContent = '✅ ' + data.salvos + ' linha(s) salva(s). O repasse continua em rascunho.';
+        }
+        btn.disabled = sujas.size === 0;
+    }).catch(e => {
+        msg.className = 'small text-danger';
+        msg.textContent = '❌ Erro ao salvar: ' + e;
+        btn.disabled = false;
+    });
+}
+</script>
+{% endblock %}

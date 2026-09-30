@@ -1,0 +1,352 @@
+{% extends "siresp_app/base.html" %}
+
+{% block title %}Início{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <h2><i class="bi bi-house"></i> Painel de {{ nome_mes }}/{{ ano }}</h2>
+    <form method="get" class="d-flex gap-2">
+        <select name="mes" class="form-select form-select-sm" onchange="this.form.submit()">
+            {% for n, nome in meses %}<option value="{{ n }}" {% if n == mes %}selected{% endif %}>{{ nome }}</option>{% endfor %}
+        </select>
+        <select name="ano" class="form-select form-select-sm" onchange="this.form.submit()">
+            {% for a in anos %}<option value="{{ a }}" {% if a == ano %}selected{% endif %}>{{ a }}</option>{% endfor %}
+        </select>
+    </form>
+</div>
+
+<div class="alert alert-primary d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div><i class="bi bi-signpost-2"></i> <strong>Seu próximo passo:</strong> {{ passo_texto }}</div>
+    <a href="{{ passo_url }}" class="btn btn-primary">{{ passo_botao }} <i class="bi bi-arrow-right"></i></a>
+</div>
+
+
+<!-- ================= INDICADORES CONTÁBEIS ================= -->
+<div class="d-flex justify-content-between align-items-end mb-2">
+    <h5 class="mb-0"><i class="bi bi-graph-up-arrow"></i> Indicadores de {{ nome_mes }}/{{ ano }}</h5>
+    <span class="small text-muted">
+        <i class="bi bi-people"></i> Visão de todos os usuários
+        · competência = mês da produção
+    </span>
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-xl-3 col-md-6">
+        <div class="card h-100 border-success">
+            <div class="card-body">
+                <div class="text-muted small">Valor a pagar (total)</div>
+                <div class="fs-3 fw-bold">R$ {{ fin.valor_total|floatformat:"2g" }}</div>
+                <div class="small">
+                    <span class="text-success">R$ {{ fin.valor_fechado|floatformat:"2g" }} fechado</span> ·
+                    <span class="text-warning-emphasis">R$ {{ fin.valor_aberto|floatformat:"2g" }} em rascunho</span>
+                </div>
+                <div class="progress mt-2" style="height:6px;" title="{{ fin.pct_fechado|floatformat:0 }}% fechado">
+                    <div class="progress-bar bg-success" style="width: {{ fin.pct_fechado|floatformat:0 }}%"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-3 col-md-6">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="text-muted small">Horas médicas</div>
+                <div class="fs-3 fw-bold">{{ fin.horas_total|floatformat:"2g" }} h</div>
+                <div class="small text-muted">
+                    {{ fin.horas_fechadas|floatformat:"2g" }} h fechadas · {{ fin.horas_abertas|floatformat:"2g" }} h em rascunho
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-3 col-md-6">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="text-muted small">Valor médio por hora</div>
+                <div class="fs-3 fw-bold">R$ {{ fin.valor_medio_hora|floatformat:"2g" }}</div>
+                <div class="small text-muted">valor total ÷ horas</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-3 col-md-6">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="text-muted small">Repasses ({{ fin.qtd_total }})</div>
+                <div class="fs-3 fw-bold">{{ fin.qtd_fechados }} <span class="fs-6 text-muted">fechados</span></div>
+                <div class="small text-muted">
+                    {{ fin.qtd_abertos }} em rascunho · ticket médio R$ {{ fin.ticket_medio|floatformat:"2g" }}
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-3 col-md-6">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="text-muted small">Atendimentos x oferta</div>
+                <div class="fs-3 fw-bold">{{ fin.atendimentos }} <span class="fs-6 text-muted">/ {{ fin.oferta }}</span></div>
+                <div class="small text-muted">taxa de atendimento {{ fin.taxa_atendimento|floatformat:1 }}%</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-3 col-md-6">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="text-muted small">Faturamento (equipes + avulsos)</div>
+                <div class="fs-3 fw-bold">{{ fin.faturamento|length }}</div>
+                <div class="small text-muted">{{ fin.qtd_equipes }} equipe(s) · {{ fin.faturamento|length }} fonte(s) de faturamento</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-3 col-md-6">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="text-muted small">vs. {{ fin.anterior.rotulo }} (valor)</div>
+                <div class="fs-3 fw-bold">
+                    {% if fin.anterior.var_valor is None %}<span class="text-muted">—</span>
+                    {% elif fin.anterior.var_valor >= 0 %}<span class="text-success">▲ {{ fin.anterior.var_valor|floatformat:1 }}%</span>
+                    {% else %}<span class="text-danger">▼ {{ fin.anterior.var_valor|floatformat:1 }}%</span>{% endif %}
+                </div>
+                <div class="small text-muted">mês anterior: R$ {{ fin.anterior.valor|floatformat:"2g" }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-3 col-md-6">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="text-muted small">vs. {{ fin.anterior.rotulo }} (horas)</div>
+                <div class="fs-3 fw-bold">
+                    {% if fin.anterior.var_horas is None %}<span class="text-muted">—</span>
+                    {% elif fin.anterior.var_horas >= 0 %}<span class="text-success">▲ {{ fin.anterior.var_horas|floatformat:1 }}%</span>
+                    {% else %}<span class="text-danger">▼ {{ fin.anterior.var_horas|floatformat:1 }}%</span>{% endif %}
+                </div>
+                <div class="small text-muted">mês anterior: {{ fin.anterior.horas|floatformat:"2g" }} h</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <!-- Faturamento por equipe / avulso -->
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header"><i class="bi bi-receipt"></i> Faturamento por equipe e profissional avulso</div>
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0 small">
+                    <thead class="table-light"><tr><th>Faturamento</th><th class="text-end">Horas</th><th class="text-end">Valor (R$)</th></tr></thead>
+                    <tbody>
+                    {% for f in fin.faturamento %}
+                        <tr class="{% if f.equipe %}table-primary{% endif %}{% if f.extra %} d-none linha-extra{% endif %}">
+                            <td>{% if f.equipe %}<i class="bi bi-people-fill"></i> <strong>{{ f.nome }}</strong>
+                                <div class="text-muted" style="font-size:.72rem;">{{ f.profissionais|join:", " }}</div>
+                                {% else %}{{ f.nome }}{% endif %}</td>
+                            <td class="text-end">{{ f.horas|floatformat:"2g" }}</td>
+                            <td class="text-end fw-bold">{{ f.valor|floatformat:"2g" }}</td>
+                        </tr>
+                    {% empty %}<tr><td colspan="3" class="text-muted p-3">Nenhum repasse neste mês.</td></tr>{% endfor %}
+                    </tbody>
+                    {% if fin.faturamento %}
+                    <tfoot class="table-light fw-bold"><tr><td>Total</td>
+                        <td class="text-end">{{ fin.horas_total|floatformat:"2g" }}</td>
+                        <td class="text-end">{{ fin.valor_total|floatformat:"2g" }}</td></tr></tfoot>
+                    {% endif %}
+                </table>
+            </div>
+            {% if fin.faturamento_extra %}
+            <div class="card-footer d-flex flex-wrap align-items-center gap-2 small">
+                <span class="text-muted">
+                    Mostrando <strong id="fat-visiveis"></strong>
+                    de {{ fin.faturamento|length }} (as maiores primeiro).
+                </span>
+                <button type="button" class="btn btn-sm btn-outline-primary ms-auto" id="fat-mais" onclick="mostrarMaisFat(10)">
+                    Carregar mais 10</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="fat-todos" onclick="mostrarMaisFat(9999)">
+                    Carregar todos ({{ fin.faturamento_extra }} restantes)</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="fat-recolher" onclick="recolherFat()">
+                    Recolher</button>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Evolução -->
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header"><i class="bi bi-bar-chart"></i> Valor finalizado por competência (6 meses)</div>
+            <div class="card-body">
+                <div class="d-flex gap-2">
+                    {% for s in serie %}
+                    <div class="flex-fill text-center" title="{{ s.rotulo }}: R$ {{ s.valor|floatformat:'2g' }} · {{ s.horas|floatformat:'2g' }} h">
+                        <div class="small text-muted" style="font-size:.7rem; height:1.1rem;">{% if s.valor %}{{ s.valor|floatformat:"0g" }}{% endif %}</div>
+                        <div class="d-flex align-items-end justify-content-center" style="height:130px;">
+                            <div class="w-75 rounded-top {% if s.atual %}bg-primary{% else %}bg-secondary-subtle{% endif %}"
+                                 style="height: {{ s.pct|floatformat:0 }}%; min-height: 3px;"></div>
+                        </div>
+                        <div class="small border-top pt-1 {% if s.atual %}fw-bold{% endif %}" style="font-size:.72rem;">{{ s.rotulo }}</div>
+                    </div>
+                    {% endfor %}
+                </div>
+                <div class="small text-muted mt-2">Soma dos repasses <strong>finalizados</strong> por mês de competência.</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Por grupo -->
+    <div class="col-lg-4">
+        <div class="card h-100">
+            <div class="card-header"><i class="bi bi-diagram-3"></i> Por grupo de valor</div>
+            <div class="card-body small">
+                {% for g in fin.por_grupo %}
+                <div class="mb-2">
+                    <div class="d-flex justify-content-between">
+                        <span>{{ g.nome }}</span>
+                        <span><strong>R$ {{ g.valor|floatformat:"2g" }}</strong> <span class="text-muted">({{ g.pct_total|floatformat:0 }}%)</span></span>
+                    </div>
+                    <div class="progress" style="height:5px;"><div class="progress-bar" style="width: {{ g.pct|floatformat:0 }}%"></div></div>
+                    <div class="text-muted" style="font-size:.72rem;">{{ g.horas|floatformat:"2g" }} h · {{ g.linhas }} linha(s)</div>
+                </div>
+                {% empty %}<div class="text-muted">Sem dados.</div>{% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Top especialidades -->
+    <div class="col-lg-4">
+        <div class="card h-100">
+            <div class="card-header"><i class="bi bi-activity"></i> Especialidades com maior valor</div>
+            <div class="card-body small">
+                {% for e in fin.top_especialidades %}
+                <div class="mb-2">
+                    <div class="d-flex justify-content-between">
+                        <span class="text-truncate me-2" title="{{ e.nome }}">{{ e.nome }}</span>
+                        <strong class="text-nowrap">R$ {{ e.valor|floatformat:"2g" }}</strong>
+                    </div>
+                    <div class="progress" style="height:5px;"><div class="progress-bar bg-info" style="width: {{ e.pct|floatformat:0 }}%"></div></div>
+                    <div class="text-muted" style="font-size:.72rem;">{{ e.horas|floatformat:"2g" }} h</div>
+                </div>
+                {% empty %}<div class="text-muted">Sem dados.</div>{% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Top profissionais -->
+    <div class="col-lg-4">
+        <div class="card h-100">
+            <div class="card-header"><i class="bi bi-person-lines-fill"></i> Profissionais com maior valor</div>
+            <ul class="list-group list-group-flush small">
+                {% for p in fin.top_profissionais %}
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    <span class="text-truncate me-2">
+                        <a href="{% url 'siresp_app:repasse_ver' p.repasse_id %}" class="text-decoration-none">{{ p.nome }}</a>
+                        {% if p.equipe %}<span class="badge bg-primary">{{ p.equipe }}</span>{% endif %}
+                        {% if p.fechado %}<i class="bi bi-lock-fill text-success" title="Finalizado"></i>
+                        {% else %}<i class="bi bi-pencil text-warning" title="Rascunho"></i>{% endif %}
+                    </span>
+                    <span class="text-nowrap"><strong>R$ {{ p.valor|floatformat:"2g" }}</strong>
+                        <span class="text-muted">· {{ p.horas|floatformat:1 }} h</span></span>
+                </li>
+                {% empty %}<li class="list-group-item text-muted">Sem dados.</li>{% endfor %}
+            </ul>
+        </div>
+    </div>
+</div>
+
+<h5 class="mb-0"><i class="bi bi-list-check"></i> Andamento do mês</h5>
+<div class="small text-muted mb-2">Baseado nas <strong>suas</strong> extrações e repasses (o login no SIRESP é individual). Os indicadores acima somam todos os usuários.</div>
+<div class="row g-3">
+    <div class="col-lg-3 col-md-6">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="text-muted small">1 · Base e regras</div>
+                <div class="fs-3">{{ total }}</div>
+                <div class="small mb-2">profissionais ativos na base</div>
+                <a href="{% url 'siresp_app:config_importar' %}" class="btn btn-sm btn-outline-primary">Importar planilha</a>
+                <a href="{% url 'siresp_app:profissionais_lista' %}{{ qs }}" class="btn btn-sm btn-outline-secondary">Ver base</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-3 col-md-6">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="text-muted small">2 · Extração no SIRESP</div>
+                <div class="fs-3">{{ extraidos }} <span class="fs-6 text-muted">/ {{ total }}</span></div>
+                <div class="progress mb-2" style="height:6px;"><div class="progress-bar" style="width: {{ pct_extraido }}%"></div></div>
+                <div class="small mb-2">
+                    {% if logado %}<span class="badge bg-success">Logado</span>
+                    {% else %}<span class="badge bg-secondary">Sem sessão</span>{% endif %}
+                    {{ cont.pendente }} pendente(s)
+                </div>
+                <a href="{% url 'siresp_app:producao_home' %}" class="btn btn-sm btn-outline-primary">Produção</a>
+                <a href="{% url 'siresp_app:producao_historico' %}" class="btn btn-sm btn-outline-secondary">Histórico</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-3 col-md-6">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="text-muted small">3 · Repasses</div>
+                <div class="fs-3">{{ cont.finalizado }} <span class="fs-6 text-muted">finalizados</span></div>
+                <div class="progress mb-2" style="height:6px;"><div class="progress-bar bg-success" style="width: {{ pct_final }}%"></div></div>
+                <div class="small mb-2">
+                    <span class="badge bg-info text-dark">{{ cont.extraido }} sem repasse</span>
+                    <span class="badge bg-warning text-dark">{{ cont.rascunho }} rascunho</span>
+                </div>
+                <a href="{% url 'siresp_app:repasse_lote' %}{{ qs }}" class="btn btn-sm btn-outline-primary">Repasse em lote</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-3 col-md-6">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="text-muted small">4 · Fechamento</div>
+                <div class="fs-3">{{ cont.pendente }}</div>
+                <div class="small mb-2">profissional(is) sem nenhuma extração no mês</div>
+                <a href="{% url 'siresp_app:profissionais_lista' %}{{ qs }}&status=pendente" class="btn btn-sm btn-outline-danger">Ver pendentes</a>
+                <a href="{% url 'siresp_app:relatorios_home' %}" class="btn btn-sm btn-outline-secondary">Relatórios</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card mt-4">
+    <div class="card-header">Como funciona</div>
+    <div class="card-body small">
+        <ol class="mb-0">
+            <li><strong>Cadastros (uma vez, ou quando mudar):</strong> importe a planilha de agendas, confira os
+                <em>Grupos de valores</em> e, se houver, crie as <em>Equipes médicas</em>.</li>
+            <li><strong>1. Produção:</strong> faça login no SIRESP, informe o período e extraia em lote
+                ("Carregar pendentes do período").</li>
+            <li><strong>2. Repasse em Lote:</strong> gere os repasses (as especialidades já vêm marcadas), edite
+                valores no relatório, salve e finalize informando a competência (mês pago).</li>
+            <li><strong>3. Relatórios:</strong> Excel consolidado, com totais por equipe, e reabertura se precisar.</li>
+        </ol>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function atualizarFat() {
+    const vis = document.getElementById('fat-visiveis');
+    if (!vis) return;
+    const ocultas = document.querySelectorAll('tr.linha-extra.d-none').length;
+    const total = vis.closest('.card').querySelectorAll('tbody tr').length;
+    vis.textContent = total - ocultas;
+    document.getElementById('fat-mais').classList.toggle('d-none', ocultas === 0);
+    const todos = document.getElementById('fat-todos');
+    todos.classList.toggle('d-none', ocultas === 0);
+    todos.textContent = 'Carregar todos (' + ocultas + ' restantes)';
+    document.getElementById('fat-recolher').classList.toggle('d-none', ocultas !== 0);
+}
+function mostrarMaisFat(n) {
+    const ocultas = Array.from(document.querySelectorAll('tr.linha-extra.d-none'));
+    ocultas.slice(0, n).forEach(tr => tr.classList.remove('d-none'));
+    atualizarFat();
+}
+function recolherFat() {
+    document.querySelectorAll('tr.linha-extra').forEach(tr => tr.classList.add('d-none'));
+    atualizarFat();
+}
+if (document.getElementById('fat-visiveis')) atualizarFat();
+</script>
+{% endblock %}

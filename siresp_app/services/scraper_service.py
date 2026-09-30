@@ -24,6 +24,18 @@ _LOCK = threading.Lock()
 
 LIMITE_SESSOES = 2
 
+# Usuários cujo Chrome está ocupado (lote/extração). Enquanto ocupado,
+# status_login não consulta o driver — a consulta ficaria presa na fila
+# do chromedriver e travaria as requisições da tela.
+_OCUPADOS = set()
+
+
+def marcar_ocupado(user, ocupado):
+    if ocupado:
+        _OCUPADOS.add(user.id)
+    else:
+        _OCUPADOS.discard(user.id)
+
 
 # =========================================================
 # HELPERS
@@ -303,6 +315,9 @@ def status_login(user):
     if not scraper.logado:
         return {'estado': 'abrindo', 'logado': False}
 
+    if user.id in _OCUPADOS:
+        return {'estado': 'logado', 'logado': True}
+
     try:
         _ = scraper.driver.current_url
     except Exception as e:
@@ -346,7 +361,7 @@ def extrair_producao(user, medico, data_ini, data_fim):
 
     try:
         dados = scraper.buscar_producao_do_medico(
-            medico['nome'], medico['crm'], medico['codigo'],
+            medico['nome'], medico.get('crm', ''), medico.get('codigo', ''),
             data_ini, data_fim,
         )
     except Exception as e:

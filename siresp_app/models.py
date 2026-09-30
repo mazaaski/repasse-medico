@@ -73,6 +73,46 @@ class EspecialidadeConhecida(models.Model):
         return self.nome
 
 
+class EquipeMedica(models.Model):
+    """
+    Equipe médica: os repasses dos profissionais da equipe saem em conjunto
+    no relatório (faturados em nome de uma empresa).
+    """
+    nome = models.CharField(max_length=200, unique=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['nome']
+        verbose_name = 'Equipe Médica'
+        verbose_name_plural = 'Equipes Médicas'
+
+    def __str__(self):
+        return self.nome
+
+
+class Profissional(models.Model):
+    """
+    Base de profissionais médicos. Alimentada pela importação da planilha
+    de agendas (e manualmente), usada para saber quem já teve repasse no mês.
+    """
+    nome = models.CharField(max_length=200)
+    nome_norm = models.CharField(max_length=200, unique=True, db_index=True)
+    ativo = models.BooleanField(default=True)
+    equipe = models.ForeignKey(
+        EquipeMedica, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='membros',
+    )
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['nome_norm']
+        verbose_name = 'Profissional'
+        verbose_name_plural = 'Profissionais'
+
+    def __str__(self):
+        return self.nome
+
+
 class ConfiguracaoLogin(models.Model):
     usuario_web = models.OneToOneField(
         User,
@@ -248,6 +288,9 @@ class Repasse(models.Model):
 
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='rascunho')
     finalizado_em = models.DateTimeField(null=True, blank=True)
+    # Mês de competência (1º dia): o mês que está sendo pago. O repasse é
+    # feito no mês seguinte (pago em setembro = competência agosto).
+    competencia = models.DateField(null=True, blank=True)
 
     criado_em = models.DateTimeField(auto_now_add=True)
     atualizado_em = models.DateTimeField(auto_now=True)
@@ -263,6 +306,10 @@ class Repasse(models.Model):
     @property
     def finalizado(self):
         return self.status == 'finalizado'
+
+    @property
+    def competencia_fmt(self):
+        return self.competencia.strftime('%m/%Y') if self.competencia else ''
 
     def recalcular_totais(self):
         marcados = self.itens.filter(marcado=True)
@@ -360,3 +407,50 @@ class ItemRepasse(models.Model):
         if not kwargs.get('update_fields'):
             self.recalcular()
         super().save(*args, **kwargs)
+
+class LogAuditoria(models.Model):
+    """
+    Trilha de auditoria: quem fez o quê, quando e o que mudou.
+    Registro apenas de inclusão (não há edição nem exclusão pela aplicação).
+    """
+    usuario = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL, related_name='logs_auditoria')
+    usuario_nome = models.CharField(max_length=150, blank=True)   # mantém o nome se o usuário for apagado
+    acao = models.CharField(max_length=40, db_index=True)
+    descricao = models.CharField(max_length=500, blank=True)
+    repasse_id = models.IntegerField(null=True, blank=True, db_index=True)
+    profissional = models.CharField(max_length=200, blank=True, db_index=True)
+    # lista de mudanças: [{"campo": "valor_base", "item": "CARDIOLOGIA", "de": "100.00", "para": "120.00"}]
+    detalhes = models.JSONField(default=list, blank=True)
+    ip = models.CharField(max_length=45, blank=True)
+    criado_em = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ['-criado_em', '-id']
+        verbose_name = 'Log de Auditoria'
+        verbose_name_plural = 'Logs de Auditoria'
+
+    def __str__(self):
+        return f'{self.criado_em:%d/%m/%Y %H:%M} {self.usuario_nome} {self.acao}'
+
+
+class SemProducao(models.Model):
+    """
+    Médico consultado no SIRESP que não teve produção no período.
+    Evita que ele volte a aparecer como "pendente" na busca em lote.
+    """
+    usuario_web = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sem_producao')
+    medico_nome = models.CharField(max_length=200)
+    nome_norm = models.CharField(max_length=200, db_index=True)
+    data_ini = models.CharField(max_length=10)
+    data_fim = models.CharField(max_length=10)
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-criado_em']
+        verbose_name = 'Consulta sem produção'
+        verbose_name_plural = 'Consultas sem produção'
+        unique_together = [('usuario_web', 'nome_norm', 'data_ini', 'data_fim')]
+
+    def __str__(self):
+        return f'{self.medico_nome} ({self.data_ini} a {self.data_fim})'

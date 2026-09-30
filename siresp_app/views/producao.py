@@ -14,7 +14,12 @@ from django.views.decorators.http import require_POST, require_GET
 from ..models import (
     ConfiguracaoLogin, SessaoSiresp, Extracao, ItemProducao,
 )
-from ..services import scraper_service
+from ..services import scraper_service, auditoria
+
+
+# Resultado das extrações individuais que falharam ou vieram vazias
+# {extracao_id: mensagem}. Em memória: só serve para o polling da tela.
+_FALHAS_EXTRACAO = {}
 
 
 # =========================================================
@@ -188,6 +193,10 @@ def buscar_medicos(request):
     if not scraper_service.sessao_ativa(request.user):
         return JsonResponse({'ok': False, 'mensagem': 'Faça login no SIRESP primeiro.'})
 
+    from ..services import lote_service
+    if lote_service.job_ativo(request.user):
+        return JsonResponse({'ok': False, 'mensagem': 'Há um lote em andamento. Aguarde terminar.'})
+
     info = scraper_service.status_login(request.user)
     if not info['logado']:
         return JsonResponse({'ok': False, 'mensagem': 'Login ainda não concluído.'})
@@ -220,6 +229,10 @@ def extrair_producao(request):
     if not scraper_service.sessao_ativa(request.user):
         return JsonResponse({'ok': False, 'mensagem': 'Sessão expirada. Faça login novamente.'})
 
+    from ..services import lote_service
+    if lote_service.job_ativo(request.user):
+        return JsonResponse({'ok': False, 'mensagem': 'Há um lote em andamento. Aguarde terminar.'})
+
     info = scraper_service.status_login(request.user)
     if not info['logado']:
         return JsonResponse({'ok': False, 'mensagem': 'Login ainda não concluído.'})
@@ -234,10 +247,15 @@ def extrair_producao(request):
     )
 
     def _run():
+        scraper_service.marcar_ocupado(request.user, True)
         try:
             dados = scraper_service.extrair_producao(
                 request.user, medico, data_ini, data_fim,
             )
+            if not dados:
+                _FALHAS_EXTRACAO[extracao.id] = 'Nenhuma produção encontrada neste período.'
+                extracao.delete()
+                return
             for i, d in enumerate(dados):
                 ItemProducao.objects.create(
                     extracao=extracao,
@@ -250,8 +268,19 @@ def extrair_producao(request):
                 esp = d.get('Especialidade', '').strip()
                 if esp:
                     EspecialidadeConhecida.objects.get_or_create(nome=esp)
+            auditoria.registrar(
+                request.user, 'EXTRACAO_CRIADA',
+                f'Extração de {extracao.medico_nome} ({data_ini} a {data_fim}): {len(dados)} linhas',
+                profissional=extracao.medico_nome)
         except Exception as e:
             print(f"[SIRESP] Erro na extração {extracao.id}: {e}")
+            _FALHAS_EXTRACAO[extracao.id] = (
+                str(e).split('Stacktrace:')[0].replace('Message:', '').strip()
+                or 'O SIRESP demorou demais para responder.'
+            )
+            extracao.delete()
+        finally:
+            scraper_service.marcar_ocupado(request.user, False)
 
     t = threading.Thread(target=_run, daemon=True)
     t.start()
@@ -264,11 +293,110 @@ def extrair_producao(request):
 
 
 # =========================================================
+# LOTE (busca + extração de vários médicos)
+# =========================================================
+@login_required
+@require_POST
+def lote_iniciar(request):
+    from ..services import lote_service
+
+    try:
+        payload = json.loads(request.body)
+    except Exception:
+        return JsonResponse({'ok': False, 'mensagem': 'Payload inválido.'})
+
+    nomes = payload.get('nomes') or []
+    if isinstance(nomes, str):
+        nomes = nomes.splitlines()
+    data_ini = str(payload.get('data_ini', '')).strip()
+    data_fim = str(payload.get('data_fim', '')).strip()
+    origem = str(payload.get('origem') or 'CRM').strip()
+
+    if len(data_ini) != 10 or len(data_fim) != 10:
+        return JsonResponse({'ok': False, 'mensagem': 'Informe as duas datas (DD/MM/AAAA).'})
+
+    if not scraper_service.sessao_ativa(request.user) or \
+            not scraper_service.status_login(request.user)['logado']:
+        return JsonResponse({'ok': False, 'mensagem': 'Faça login no SIRESP primeiro.'})
+
+    ok, msg = lote_service.iniciar(request.user, nomes, data_ini, data_fim, origem)
+    return JsonResponse({'ok': ok, 'mensagem': msg})
+
+
+@login_required
+@require_GET
+def lote_status(request):
+    from ..services import lote_service
+
+    job = lote_service.obter_job(request.user)
+    if not job:
+        return JsonResponse({'ok': True, 'existe': False})
+    itens = job['itens']
+    feitos = sum(1 for i in itens if i['status'] not in ('aguardando', 'buscando', 'extraindo'))
+    return JsonResponse({
+        'ok': True,
+        'existe': True,
+        'rodando': job['rodando'],
+        'total': len(itens),
+        'feitos': feitos,
+        'itens': itens,
+    })
+
+
+@login_required
+@require_POST
+def lote_cancelar(request):
+    from ..services import lote_service
+    return JsonResponse({'ok': lote_service.cancelar(request.user)})
+
+
+@login_required
+@require_GET
+def lote_pendentes(request):
+    """
+    Nomes dos profissionais da base que ainda precisam ser extraídos.
+
+    Com data_ini/data_fim (o período da tela): pendente = sem extração que cubra
+    o período inteiro. Sem datas (compatibilidade): pendente = sem nenhuma
+    extração no mês informado.
+    """
+    from datetime import date
+    from ..services.profissionais_service import situacao_mes, pendentes_extracao
+
+    data_ini = request.GET.get('data_ini', '').strip()
+    data_fim = request.GET.get('data_fim', '').strip()
+
+    if data_ini or data_fim:
+        try:
+            res = pendentes_extracao(request.user, data_ini, data_fim)
+        except ValueError as e:
+            return JsonResponse({'ok': False, 'mensagem': str(e)})
+        return JsonResponse({'ok': True, **res})
+
+    hoje = date.today()
+    try:
+        ano = int(request.GET.get('ano', hoje.year))
+        mes = int(request.GET.get('mes', hoje.month))
+        date(ano, mes, 1)
+    except ValueError:
+        return JsonResponse({'ok': False, 'mensagem': 'Mês inválido.'})
+
+    nomes = [s['profissional'].nome for s in situacao_mes(request.user, ano, mes)
+             if s['status'] == 'pendente']
+    return JsonResponse({'ok': True, 'nomes': nomes})
+
+
+# =========================================================
 # STATUS DA EXTRAÇÃO
 # =========================================================
 @login_required
 @require_GET
 def status_extracao(request, pk):
+    if pk in _FALHAS_EXTRACAO:
+        return JsonResponse({
+            'ok': True, 'extracao_id': pk, 'finalizada': False,
+            'erro': _FALHAS_EXTRACAO.pop(pk),
+        })
     extracao = get_object_or_404(Extracao, pk=pk, usuario_web=request.user)
     total = extracao.itens.count()
     return JsonResponse({
@@ -285,7 +413,8 @@ def status_extracao(request, pk):
 # =========================================================
 @login_required
 def ver_extracao(request, pk):
-    extracao = get_object_or_404(Extracao, pk=pk, usuario_web=request.user)
+    # Consulta liberada para todos; só o dono gera repasse/exclui a partir dela.
+    extracao = get_object_or_404(Extracao.objects.select_related('usuario_web'), pk=pk)
     itens = extracao.itens.all()
 
     colunas_visiveis = [
@@ -310,6 +439,8 @@ def ver_extracao(request, pk):
         'extracao': extracao,
         'colunas': colunas_visiveis,
         'linhas': linhas,
+        'outro_dono': extracao.usuario_web_id != request.user.id,
+        'repasse': getattr(extracao, 'repasse', None),
     })
 
 
@@ -320,7 +451,7 @@ def ver_extracao(request, pk):
 def historico(request):
     extracoes = (
         Extracao.objects
-        .filter(usuario_web=request.user)
+        .select_related('usuario_web')
         .prefetch_related('repasse')
         .order_by('-criada_em')
     )
@@ -345,6 +476,7 @@ def historico(request):
         lista.append({
             'obj': e,
             'repasse': repasse_info,
+            'dono': e.usuario_web_id == request.user.id,
         })
 
     return render(request, 'siresp_app/producao/historico.html', {
@@ -372,6 +504,9 @@ def excluir_extracao(request, pk):
     except Exception:
         pass
 
+    auditoria.registrar(request, 'EXTRACAO_EXCLUIDA',
+                        f'Extração de {extracao.medico_nome} ({extracao.data_ini} a {extracao.data_fim}) excluída',
+                        profissional=extracao.medico_nome)
     extracao.delete()
     messages.success(request, 'Extração excluída.')
     return redirect('siresp_app:producao_historico')
@@ -415,6 +550,9 @@ def excluir_varias(request):
     qtd_apagadas = 0
     for e in apagaveis:
         try:
+            auditoria.registrar(request, 'EXTRACAO_EXCLUIDA',
+                                f'Extração de {e.medico_nome} ({e.data_ini} a {e.data_fim}) excluída',
+                                profissional=e.medico_nome)
             e.delete()
             qtd_apagadas += 1
         except Exception as ex:
@@ -439,7 +577,7 @@ def excluir_varias(request):
 # =========================================================
 @login_required
 def exportar_csv(request, pk):
-    extracao = get_object_or_404(Extracao, pk=pk, usuario_web=request.user)
+    extracao = get_object_or_404(Extracao, pk=pk)
     itens = extracao.itens.all()
 
     colunas = [
@@ -476,7 +614,7 @@ def exportar_csv(request, pk):
 # =========================================================
 @login_required
 def exportar_json(request, pk):
-    extracao = get_object_or_404(Extracao, pk=pk, usuario_web=request.user)
+    extracao = get_object_or_404(Extracao, pk=pk)
     itens = extracao.itens.all()
 
     dados = {

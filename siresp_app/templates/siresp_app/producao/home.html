@@ -3,91 +3,25 @@
 {% block title %}Produção{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h2><i class="bi bi-clipboard2-pulse"></i> Produção</h2>
-</div>
-
-<div class="alert alert-info">
-    <i class="bi bi-info-circle"></i>
-    <strong>Modo headless:</strong>
-    O Chrome roda invisível no servidor. Você digita o CAPTCHA diretamente
-    aqui na tela, sem precisar acessar a VM.
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <h2 class="mb-0"><i class="bi bi-clipboard2-pulse"></i> Produção</h2>
+    <div class="d-flex gap-2">
+        <a href="{% url 'siresp_app:producao_historico' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-clock-history"></i> Histórico de extrações
+        </a>
+        <a href="{% url 'siresp_app:repasse_lote' %}" class="btn btn-outline-primary">
+            Próximo: Repasse em Lote <i class="bi bi-arrow-right"></i>
+        </a>
+    </div>
 </div>
 
 <div class="row g-3">
 
-    <!-- COLUNA ESQUERDA -->
-    <div class="col-lg-5">
-
-        <!-- Credenciais -->
+    <!-- PASSO 1 — CONECTAR -->
+    <div class="col-lg-4">
         <div class="card mb-3">
-            <div class="card-header"><i class="bi bi-key"></i> Credenciais SIRESP</div>
+            <div class="card-header"><strong>1.</strong> Conectar ao SIRESP</div>
             <div class="card-body">
-                <form method="post" action="{% url 'siresp_app:producao_salvar_cred' %}">
-                    {% csrf_token %}
-
-                    <div class="row g-2">
-                        <div class="col-md-6">
-                            <label class="form-label small">Usuário</label>
-                            <input type="text" name="usuario" class="form-control form-control-sm"
-                                   value="{{ config.usuario }}" autocomplete="off">
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label small">Senha</label>
-                            <input type="password" name="senha" class="form-control form-control-sm"
-                                   value="{{ config.senha }}" autocomplete="off">
-                        </div>
-                    </div>
-
-                    <div class="row g-2 mt-1">
-                        <div class="col-md-3">
-                            <label class="form-label small">CPF (3 prim.)</label>
-                            <input type="text" name="cpf_primeiros" class="form-control form-control-sm"
-                                   value="{{ config.cpf_primeiros }}">
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label small">CPF (3 últ.)</label>
-                            <input type="text" name="cpf_ultimos" class="form-control form-control-sm"
-                                   value="{{ config.cpf_ultimos }}">
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label small">RG (3 prim.)</label>
-                            <input type="text" name="rg_primeiros" class="form-control form-control-sm"
-                                   value="{{ config.rg_primeiros }}">
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label small">RG (3 últ.)</label>
-                            <input type="text" name="rg_ultimos" class="form-control form-control-sm"
-                                   value="{{ config.rg_ultimos }}">
-                        </div>
-                    </div>
-
-                    <div class="row g-2 mt-1">
-                        <div class="col-md-4">
-                            <label class="form-label small">Origem</label>
-                            <select name="origem" class="form-select form-select-sm">
-                                <option value="CRM" {% if config.origem == 'CRM' %}selected{% endif %}>CRM</option>
-                                <option value="CRO" {% if config.origem == 'CRO' %}selected{% endif %}>CRO</option>
-                                <option value="COREN" {% if config.origem == 'COREN' %}selected{% endif %}>COREN</option>
-                                <option value="CRF" {% if config.origem == 'CRF' %}selected{% endif %}>CRF</option>
-                                <option value="CRP" {% if config.origem == 'CRP' %}selected{% endif %}>CRP</option>
-                            </select>
-                        </div>
-                        <div class="col-md-8 d-flex align-items-end">
-                            <button type="submit" class="btn btn-sm btn-outline-primary w-100">
-                                <i class="bi bi-save"></i> Salvar Credenciais
-                            </button>
-                        </div>
-                    </div>
-                </form>
-            </div>
-        </div>
-
-        <!-- Status da sessão + Login -->
-        <div class="card">
-            <div class="card-header"><i class="bi bi-person-check"></i> Sessão SIRESP</div>
-            <div class="card-body">
-
                 <div id="status-box" class="alert alert-secondary py-2 mb-3">
                     <span id="status-icon">⏳</span>
                     <span id="status-text">Verificando...</span>
@@ -97,89 +31,162 @@
                     <button id="btn-login" class="btn btn-primary flex-grow-1" onclick="fazerLogin()">
                         <i class="bi bi-box-arrow-in-right"></i> Fazer Login
                     </button>
-                    <button id="btn-fechar" class="btn btn-outline-danger" onclick="fecharSessao()">
-                        <i class="bi bi-x-circle"></i> Fechar
+                    <button id="btn-fechar" class="btn btn-outline-danger" onclick="fecharSessao()" title="Encerrar sessão">
+                        <i class="bi bi-x-circle"></i>
                     </button>
                 </div>
-
                 <div class="small text-muted mt-2">
-                    Sessões ativas: <span id="sessoes-ativas">{{ sessoes_ativas }}</span>
-                    / {{ limite_sessoes }}
+                    Você digita o CAPTCHA aqui na tela. Sessões ativas:
+                    <span id="sessoes-ativas">{{ sessoes_ativas }}</span> / {{ limite_sessoes }}
                 </div>
 
+                <details class="mt-3" {% if not config.usuario %}open{% endif %}>
+                    <summary class="small text-primary" style="cursor:pointer;">
+                        <i class="bi bi-key"></i> Credenciais do SIRESP
+                        {% if config.usuario %}<span class="text-muted">(salvas)</span>{% endif %}
+                    </summary>
+                    <form method="post" action="{% url 'siresp_app:producao_salvar_cred' %}" class="mt-2">
+                        {% csrf_token %}
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <label class="form-label small mb-0">Usuário</label>
+                                <input type="text" name="usuario" class="form-control form-control-sm"
+                                       value="{{ config.usuario }}" autocomplete="off">
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small mb-0">Senha</label>
+                                <input type="password" name="senha" class="form-control form-control-sm"
+                                       value="{{ config.senha }}" autocomplete="off">
+                            </div>
+                            <div class="col-3"><label class="form-label small mb-0">CPF início</label>
+                                <input type="text" name="cpf_primeiros" class="form-control form-control-sm" value="{{ config.cpf_primeiros }}"></div>
+                            <div class="col-3"><label class="form-label small mb-0">CPF fim</label>
+                                <input type="text" name="cpf_ultimos" class="form-control form-control-sm" value="{{ config.cpf_ultimos }}"></div>
+                            <div class="col-3"><label class="form-label small mb-0">RG início</label>
+                                <input type="text" name="rg_primeiros" class="form-control form-control-sm" value="{{ config.rg_primeiros }}"></div>
+                            <div class="col-3"><label class="form-label small mb-0">RG fim</label>
+                                <input type="text" name="rg_ultimos" class="form-control form-control-sm" value="{{ config.rg_ultimos }}"></div>
+                            <div class="col-5">
+                                <label class="form-label small mb-0">Origem</label>
+                                <select name="origem" class="form-select form-select-sm">
+                                    <option value="CRM" {% if config.origem == 'CRM' %}selected{% endif %}>CRM</option>
+                                    <option value="CRO" {% if config.origem == 'CRO' %}selected{% endif %}>CRO</option>
+                                    <option value="COREN" {% if config.origem == 'COREN' %}selected{% endif %}>COREN</option>
+                                    <option value="CRF" {% if config.origem == 'CRF' %}selected{% endif %}>CRF</option>
+                                    <option value="CRP" {% if config.origem == 'CRP' %}selected{% endif %}>CRP</option>
+                                </select>
+                            </div>
+                            <div class="col-7 d-flex align-items-end">
+                                <button type="submit" class="btn btn-sm btn-outline-primary w-100">
+                                    <i class="bi bi-save"></i> Salvar credenciais
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </details>
             </div>
         </div>
-
     </div>
 
-    <!-- COLUNA DIREITA -->
-    <div class="col-lg-7">
-
-        <!-- Busca -->
-        <div class="card mb-3">
-            <div class="card-header"><i class="bi bi-search"></i> 1. Buscar Médicos</div>
-            <div class="card-body">
-                <div class="row g-2 mb-2">
-                    <div class="col-md-8">
-                        <input type="text" id="input-busca" class="form-control"
-                               placeholder="Nome parcial do médico...">
-                    </div>
-                    <div class="col-md-4">
-                        <button class="btn btn-outline-primary w-100" onclick="buscarMedicos()">
-                            <i class="bi bi-search"></i> Buscar
-                        </button>
-                    </div>
-                </div>
-
-                <div id="lista-medicos" class="list-group" style="max-height: 200px; overflow-y: auto;">
-                    <div class="text-muted small p-2">Nenhum médico buscado ainda.</div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Período + Extrair -->
+    <!-- PASSO 2 — EXTRAIR -->
+    <div class="col-lg-8">
         <div class="card">
-            <div class="card-header"><i class="bi bi-calendar-range"></i> 2. Período e Extração</div>
+            <div class="card-header"><strong>2.</strong> Extrair a produção do período</div>
             <div class="card-body">
 
-                <div id="medico-selecionado" class="alert alert-light border py-2 mb-3">
-                    Nenhum médico selecionado.
+                <div class="row g-2 mb-3" style="max-width:520px;">
+                    <div class="col-6">
+                        <label class="form-label small mb-0">Data inicial</label>
+                        <input type="text" id="data-ini" class="form-control" placeholder="DD/MM/AAAA" maxlength="10">
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label small mb-0">Data final</label>
+                        <input type="text" id="data-fim" class="form-control" placeholder="DD/MM/AAAA" maxlength="10">
+                    </div>
+                    <div class="col-12 small text-muted">
+                        Use o mês fechado inteiro (ex.: 01/08 a 31/08). Máximo de 120 dias.
+                        <a href="#" onclick="preencherMesAnterior(); return false;">Preencher com o mês anterior</a>
+                    </div>
                 </div>
 
-                <div class="row g-2 mb-3">
-                    <div class="col-md-5">
-                        <label class="form-label small">Data inicial</label>
-                        <input type="text" id="data-ini" class="form-control"
-                               placeholder="DD/MM/AAAA" maxlength="10">
+                <ul class="nav nav-tabs mb-3">
+                    <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#aba-lote" type="button">
+                        <i class="bi bi-list-ul"></i> Vários médicos (lote)</button></li>
+                    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#aba-um" type="button">
+                        <i class="bi bi-person"></i> Um médico</button></li>
+                </ul>
+
+                <div class="tab-content">
+
+                    <!-- LOTE -->
+                    <div class="tab-pane fade show active" id="aba-lote">
+                        <p class="small text-muted mb-2">
+                            Um nome por linha. O sistema busca cada médico no SIRESP e extrai a produção do período.
+                        </p>
+                        <textarea id="lote-nomes" class="form-control mb-2" rows="6"
+                                  placeholder="NOME COMPLETO DO MÉDICO 1&#10;NOME COMPLETO DO MÉDICO 2"></textarea>
+                        <div id="lote-resumo-pend" class="small text-success mb-1"></div>
+                        <div class="d-flex flex-wrap gap-2">
+                            <button class="btn btn-outline-secondary" onclick="carregarPendentes()"
+                                    title="Profissionais da base sem extração que cubra o período informado acima">
+                                <i class="bi bi-people"></i> Carregar pendentes do período
+                            </button>
+                            <button id="btn-lote" class="btn btn-success" onclick="iniciarLote()" disabled>
+                                <i class="bi bi-play-fill"></i> Buscar e extrair em lote
+                            </button>
+                            <button id="btn-lote-cancelar" class="btn btn-outline-danger d-none" onclick="cancelarLote()">
+                                Cancelar
+                            </button>
+                        </div>
+
+                        <div id="lote-progresso" class="d-none mt-3">
+                            <div class="progress mb-2" style="height: 8px;">
+                                <div id="lote-barra" class="progress-bar" style="width: 0%"></div>
+                            </div>
+                            <div class="small text-muted mb-2" id="lote-resumo"></div>
+                            <table class="table table-sm small mb-0">
+                                <tbody id="lote-itens"></tbody>
+                            </table>
+                        </div>
                     </div>
-                    <div class="col-md-5">
-                        <label class="form-label small">Data final</label>
-                        <input type="text" id="data-fim" class="form-control"
-                               placeholder="DD/MM/AAAA" maxlength="10">
-                    </div>
-                    <div class="col-md-2 d-flex align-items-end">
-                        <button id="btn-extrair" class="btn btn-success w-100"
-                                onclick="extrair()" disabled>
-                            <i class="bi bi-play-fill"></i> Extrair
+
+                    <!-- UM MÉDICO -->
+                    <div class="tab-pane fade" id="aba-um">
+                        <div class="row g-2 mb-2">
+                            <div class="col-md-8">
+                                <input type="text" id="input-busca" class="form-control"
+                                       placeholder="Nome parcial do médico...">
+                            </div>
+                            <div class="col-md-4">
+                                <button class="btn btn-outline-primary w-100" onclick="buscarMedicos()">
+                                    <i class="bi bi-search"></i> Buscar
+                                </button>
+                            </div>
+                        </div>
+                        <div id="lista-medicos" class="list-group mb-3" style="max-height: 200px; overflow-y: auto;">
+                            <div class="text-muted small p-2">Nenhum médico buscado ainda.</div>
+                        </div>
+
+                        <div id="medico-selecionado" class="alert alert-light border py-2 mb-2">
+                            Nenhum médico selecionado.
+                        </div>
+                        <button id="btn-extrair" class="btn btn-success" onclick="extrair()" disabled>
+                            <i class="bi bi-play-fill"></i> Extrair este médico
                         </button>
+
+                        <div id="progresso" class="d-none mt-3">
+                            <div class="progress" style="height: 6px;">
+                                <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: 100%"></div>
+                            </div>
+                            <p class="small text-muted mt-2 mb-0" id="progresso-texto">
+                                Extraindo... aguarde (pode levar 1-2 minutos).
+                            </p>
+                        </div>
                     </div>
                 </div>
-
-                <div id="progresso" class="d-none">
-                    <div class="progress" style="height: 6px;">
-                        <div class="progress-bar progress-bar-striped progress-bar-animated"
-                             style="width: 100%"></div>
-                    </div>
-                    <p class="small text-muted mt-2 mb-0" id="progresso-texto">
-                        Extraindo... aguarde (pode levar 1-2 minutos).
-                    </p>
-                </div>
-
             </div>
         </div>
-
     </div>
-
 </div>
 
 <!-- Modal de CAPTCHA -->
@@ -244,17 +251,15 @@
 </div>
 
 <!-- Log -->
-<div class="card mt-3">
-    <div class="card-header d-flex justify-content-between">
-        <span><i class="bi bi-terminal"></i> Log</span>
-        <button class="btn btn-sm btn-outline-secondary"
+<details class="mt-3">
+    <summary class="small text-muted" style="cursor:pointer;"><i class="bi bi-terminal"></i> Log técnico</summary>
+    <div class="mt-2">
+        <button class="btn btn-sm btn-outline-secondary mb-1"
                 onclick="document.getElementById('log-debug').textContent = 'Log limpo.';">Limpar</button>
-    </div>
-    <div class="card-body p-2">
         <pre id="log-debug" style="max-height: 150px; overflow-y: auto; font-size: 11px;
              margin: 0; background: #f8f9fa; padding: 8px; border-radius: 4px;">Aguardando ações...</pre>
     </div>
-</div>
+</details>
 {% endblock %}
 
 {% block extra_js %}
@@ -694,6 +699,14 @@ function monitorarExtracao(id) {
         fetch('/producao/status-extracao/' + id + '/')
             .then(r => r.json())
             .then(data => {
+                if (data.erro) {
+                    clearInterval(check);
+                    document.getElementById('progresso').classList.add('d-none');
+                    document.getElementById('btn-extrair').disabled = false;
+                    log('❌ Extração: ' + data.erro);
+                    alert('Não foi possível extrair: ' + data.erro);
+                    return;
+                }
                 if (data.finalizada) {
                     clearInterval(check);
                     document.getElementById('progresso-texto').textContent =
@@ -737,7 +750,118 @@ function validarExtracao() {
                    btnLogin.innerHTML.includes('Logado');
 
     btn.disabled = !(medicoSelecionado && ini.length === 10 && fim.length === 10 && logado);
+
+    const nomes = document.getElementById('lote-nomes').value.trim();
+    document.getElementById('btn-lote').disabled =
+        loteEmAndamento || !(logado && nomes && ini.length === 10 && fim.length === 10);
 }
+
+// =========================================================
+// LOTE
+// =========================================================
+let loteEmAndamento = false;
+let intervalLote = null;
+
+function preencherMesAnterior() {
+    const hoje = new Date();
+    const ini = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1);
+    const fim = new Date(hoje.getFullYear(), hoje.getMonth(), 0);
+    const f = d => String(d.getDate()).padStart(2, '0') + '/' +
+                   String(d.getMonth() + 1).padStart(2, '0') + '/' + d.getFullYear();
+    document.getElementById('data-ini').value = f(ini);
+    document.getElementById('data-fim').value = f(fim);
+    validarExtracao();
+}
+document.getElementById('lote-nomes').addEventListener('input', validarExtracao);
+
+function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function carregarPendentes() {
+    const ini = document.getElementById('data-ini').value.trim();
+    const fim = document.getElementById('data-fim').value.trim();
+    if (ini.length !== 10 || fim.length !== 10) {
+        alert('Preencha o período (data inicial e final) antes de carregar os pendentes.');
+        return;
+    }
+    const url = '{% url "siresp_app:producao_lote_pendentes" %}' +
+                '?data_ini=' + encodeURIComponent(ini) + '&data_fim=' + encodeURIComponent(fim);
+    fetch(url)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.ok) { alert(data.mensagem || 'Erro.'); return; }
+            const resumo = `${data.ja_extraidos} já extraído(s) e ${data.sem_producao} sem produção neste período.`;
+            if (!data.nomes.length) {
+                alert('Nenhum profissional pendente para ' + ini + ' a ' + fim + '. ' + resumo);
+                return;
+            }
+            document.getElementById('lote-nomes').value = data.nomes.join('\n');
+            log(`📋 ${data.nomes.length} pendente(s) de ${data.total}. ${resumo}`);
+            document.getElementById('lote-resumo-pend').textContent =
+                `${data.nomes.length} pendente(s) carregado(s) — ${resumo}`;
+            validarExtracao();
+        });
+}
+
+function iniciarLote() {
+    postJSON('{% url "siresp_app:producao_lote_iniciar" %}', {
+        nomes: document.getElementById('lote-nomes').value.split('\n'),
+        data_ini: document.getElementById('data-ini').value.trim(),
+        data_fim: document.getElementById('data-fim').value.trim(),
+    }).then(data => {
+        log('← Lote: ' + JSON.stringify(data));
+        if (!data.ok) { alert(data.mensagem); return; }
+        monitorarLote();
+    }).catch(e => log('❌ ' + e));
+}
+
+function cancelarLote() {
+    postJSON('{% url "siresp_app:producao_lote_cancelar" %}');
+}
+
+const ROTULOS_LOTE = {
+    aguardando: ['⏳', 'Aguardando'], buscando: ['🔍', 'Buscando...'],
+    extraindo: ['⚙️', 'Extraindo...'], concluido: ['✅', 'Concluído'],
+    ja_extraido: ['♻️', 'Já extraído'], sem_dados: ['⚪', 'Sem produção'],
+    nao_encontrado: ['❓', 'Não encontrado'], ambiguo: ['⚠️', 'Ambíguo'],
+    erro: ['❌', 'Erro'], cancelado: ['🚫', 'Cancelado'],
+};
+
+function renderLote(data) {
+    document.getElementById('lote-progresso').classList.remove('d-none');
+    document.getElementById('lote-barra').style.width =
+        (data.total ? data.feitos * 100 / data.total : 0) + '%';
+    document.getElementById('lote-resumo').textContent =
+        `${data.feitos} de ${data.total} processados` + (data.rodando ? ' — em andamento...' : ' — finalizado.');
+    document.getElementById('lote-itens').innerHTML = data.itens.map(i => {
+        const [ic, rot] = ROTULOS_LOTE[i.status] || ['', i.status];
+        let extra = i.mensagem ? escapeHtml(i.mensagem) : '';
+        if (i.candidatos && i.candidatos.length)
+            extra += ' Opções: ' + i.candidatos.map(escapeHtml).join('; ');
+        if (i.extracao_id)
+            extra += ` <a href="/producao/ver/${i.extracao_id}/">ver</a>`;
+        return `<tr><td>${escapeHtml(i.nome)}</td><td class="text-nowrap">${ic} ${rot}</td>` +
+               `<td class="text-muted">${extra}</td></tr>`;
+    }).join('');
+}
+
+function monitorarLote() {
+    if (intervalLote) clearInterval(intervalLote);
+    const tick = () => fetch('{% url "siresp_app:producao_lote_status" %}')
+        .then(r => r.json())
+        .then(data => {
+            if (!data.existe) { clearInterval(intervalLote); intervalLote = null; return; }
+            loteEmAndamento = data.rodando;
+            renderLote(data);
+            document.getElementById('btn-lote-cancelar').classList.toggle('d-none', !data.rodando);
+            validarExtracao();
+            if (!data.rodando) { clearInterval(intervalLote); intervalLote = null; }
+        });
+    intervalLote = setInterval(tick, 2000);
+    tick();
+}
+monitorarLote();  // retoma exibição se já houver lote
 
 log('Página carregada — modo HEADLESS');
 </script>

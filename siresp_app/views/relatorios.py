@@ -11,31 +11,53 @@ from django.http import HttpResponse
 from django.views.decorators.http import require_POST
 
 from ..models import Repasse
+from ..permissions import admin_required, eh_admin, repasses_visiveis
+from ..services import auditoria
 
 
 @login_required
 def home(request):
-    qs = Repasse.objects.filter(
-        usuario_web=request.user,
-        status='finalizado',
-    ).select_related('extracao')
+    from datetime import datetime
+    from ..services.profissionais_service import equipe_por_medico
+
+    # todos os repasses do usuário: finalizados (verde) e rascunhos (amarelo)
+    base = repasses_visiveis(request.user)
 
     medico = request.GET.get('medico', '').strip()
-    data_ini = request.GET.get('data_ini', '').strip()
-    data_fim = request.GET.get('data_fim', '').strip()
+    competencia = request.GET.get('competencia', '').strip()
+    situacao = request.GET.get('situacao', '').strip()
 
+    qs = base.select_related('extracao', 'usuario_web')
+    if situacao in ('finalizado', 'rascunho'):
+        qs = qs.filter(status=situacao)
+    else:
+        situacao = ''
     if medico:
         qs = qs.filter(extracao__medico_nome__icontains=medico)
-    if data_ini:
-        qs = qs.filter(extracao__data_ini__gte=data_ini)
-    if data_fim:
-        qs = qs.filter(extracao__data_fim__lte=data_fim)
+    if competencia:
+        try:
+            qs = qs.filter(competencia=datetime.strptime(competencia, '%Y-%m').date())
+        except ValueError:
+            competencia = ''
+
+    repasses = list(qs.order_by('status', '-competencia', 'extracao__medico_nome'))
+    equipes = equipe_por_medico({r.extracao.medico_nome for r in repasses})
+    for r in repasses:
+        r.equipe = equipes.get(r.extracao.medico_nome)
 
     return render(request, 'siresp_app/relatorios/home.html', {
-        'repasses': qs,
+        'repasses': repasses,
+        'filtro_situacao': situacao,
+        'ver_usuario': True,
+        'qtd_finalizados': sum(1 for r in repasses if r.finalizado),
+        'qtd_rascunhos': sum(1 for r in repasses if not r.finalizado),
+        'competencias': base.exclude(competencia__isnull=True)
+                            .order_by('-competencia')
+                            .values_list('competencia', flat=True).distinct(),
         'filtro_medico': medico,
-        'filtro_data_ini': data_ini,
-        'filtro_data_fim': data_fim,
+        'filtro_competencia': competencia,
+        'total_horas': sum((r.horas_total_final for r in repasses), Decimal('0')),
+        'total_valor': sum((r.valor_total_final for r in repasses), Decimal('0')),
     })
 
 
@@ -56,9 +78,8 @@ def gerar_excel(request):
         messages.error(request, 'IDs inválidos.')
         return redirect('siresp_app:relatorios_home')
 
-    repasses = Repasse.objects.filter(
+    repasses = repasses_visiveis(request.user).filter(
         pk__in=ids,
-        usuario_web=request.user,
         status='finalizado',
     ).select_related('extracao')
 
@@ -91,7 +112,7 @@ def gerar_excel(request):
         "Valor Base (R$)", "Bônus 100% (R$)", "Bônus %", "Bônus Aplicado (R$)",
         "Valor/Hora (R$)",
         "Horas Final",
-        "Total Final (R$)",
+        "Total Final (R$)", "Competência", "Equipe",
     ]
 
     fonte_cab = Font(bold=True, color="FFFFFF")
@@ -103,16 +124,21 @@ def gerar_excel(request):
         cell.fill = fundo_cab
         cell.alignment = Alignment(horizontal="center", vertical="center")
 
-    larguras = [40, 12, 22, 40, 22, 8, 12, 10, 14, 15, 10, 16, 14, 12, 15]
+    larguras = [40, 12, 22, 40, 22, 8, 12, 10, 14, 15, 10, 16, 14, 12, 15, 13, 30]
     for i, w in enumerate(larguras):
         col_letter = chr(ord('A') + i)
         ws.column_dimensions[col_letter].width = w
+
+    from ..services.profissionais_service import equipe_por_medico, agrupar_por_equipe
+    from ..services.resumo_service import linhas_resumo, anexar_resumo_planilha
+    lista_repasses = list(repasses.order_by('extracao__medico_nome', 'extracao__data_ini'))
+    equipes = equipe_por_medico({r.extracao.medico_nome for r in lista_repasses})
 
     linha = linha_cab + 1
     total_horas_geral = Decimal('0')
     total_valor_geral = Decimal('0')
 
-    for repasse in repasses.order_by('extracao__medico_nome', 'extracao__data_ini'):
+    for repasse in lista_repasses:
         ext = repasse.extracao
         marcados = repasse.itens.filter(marcado=True).order_by('ordem')
 
@@ -132,6 +158,9 @@ def gerar_excel(request):
             ws.cell(row=linha, column=13, value=float(item.valor_hora))
             ws.cell(row=linha, column=14, value=float(item.horas_final))
             ws.cell(row=linha, column=15, value=float(item.total_final))
+            ws.cell(row=linha, column=16, value=repasse.competencia_fmt)
+            eq = equipes.get(ext.medico_nome)
+            ws.cell(row=linha, column=17, value=eq.nome if eq else '')
 
             ws.cell(row=linha, column=8).number_format = '0'
             for c in (9, 10, 12, 13, 15):
@@ -150,10 +179,44 @@ def gerar_excel(request):
     ws.cell(row=linha, column=15).number_format = 'R$ #,##0.00'
 
     thin = Side(border_style="thin", color="000000")
-    for c in range(1, 16):
+    for c in range(1, 18):
         cell = ws.cell(row=linha, column=c)
         cell.border = Border(top=thin, bottom=thin, left=thin, right=thin)
 
+    grupos = agrupar_por_equipe(
+        lista_repasses,
+        chave_nome=lambda r: r.extracao.medico_nome,
+        valor_horas=lambda r: r.horas_total_final,
+        valor_total=lambda r: r.valor_total_final,
+    )
+    resumo_linhas = linhas_resumo(
+        grupos,
+        nome_item=lambda r: r.extracao.medico_nome,
+        horas_item=lambda r: r.horas_total_final,
+        valor_item=lambda r: r.valor_total_final,
+        id_item=lambda r: r.pk,
+    )
+    # No fim da aba principal, alinhado às colunas Profissional/.../Horas Final/Total Final
+    anexar_resumo_planilha(ws, resumo_linhas, total_horas_geral, total_valor_geral,
+                           col_nome=1, col_profs=4, col_horas=2, col_valor=3)
+
+    # Aba própria de fechamento por faturamento
+    resumo = wb.create_sheet("Por Equipe")
+    resumo.append(["Faturamento", "Profissionais", "Horas", "Valor total (R$)"])
+    for c in resumo[1]:
+        c.font = Font(bold=True)
+    for l in resumo_linhas:
+        resumo.append([l['nome'], l['profissionais'], float(l['horas']), float(l['valor'])])
+    resumo.append(["TOTAL GERAL", '', float(total_horas_geral), float(total_valor_geral)])
+    for c in resumo[resumo.max_row]:
+        c.font = Font(bold=True)
+    for col, w in zip("ABCD", (40, 80, 10, 18)):
+        resumo.column_dimensions[col].width = w
+    for row in resumo.iter_rows(min_row=2):
+        row[3].number_format = 'R$ #,##0.00'
+
+    auditoria.registrar(request, 'EXPORTACAO',
+                        f'Excel consolidado: {len(lista_repasses)} repasse(s)')
     response = HttpResponse(
         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     )
@@ -161,79 +224,125 @@ def gerar_excel(request):
     response['Content-Disposition'] = f'attachment; filename="{nome}"'
     wb.save(response)
     return response
-# =========================================================
-# REABRIR VÁRIOS REPASSES (com senha de admin)
-# =========================================================
 @login_required
+@require_POST
+def gerar_pdf(request):
+    from ..services.pdf_service import gerar_pdf as _gerar
+    from ..services.profissionais_service import agrupar_por_equipe
+    from ..services.resumo_service import linhas_resumo
+
+    try:
+        ids = [int(i) for i in request.POST.getlist('repasses')]
+    except ValueError:
+        messages.error(request, 'IDs inválidos.')
+        return redirect('siresp_app:relatorios_home')
+    if not ids:
+        messages.warning(request, 'Selecione pelo menos um repasse.')
+        return redirect('siresp_app:relatorios_home')
+
+    lista = list(repasses_visiveis(request.user).filter(
+        pk__in=ids, status='finalizado'
+    ).select_related('extracao').order_by('extracao__medico_nome', 'extracao__data_ini'))
+    if not lista:
+        messages.warning(request, 'Nenhum repasse finalizado encontrado.')
+        return redirect('siresp_app:relatorios_home')
+
+    grupos = agrupar_por_equipe(
+        lista,
+        chave_nome=lambda r: r.extracao.medico_nome,
+        valor_horas=lambda r: r.horas_total_final,
+        valor_total=lambda r: r.valor_total_final,
+    )
+    resumo = linhas_resumo(
+        grupos,
+        nome_item=lambda r: r.extracao.medico_nome,
+        horas_item=lambda r: r.horas_total_final,
+        valor_item=lambda r: r.valor_total_final,
+        id_item=lambda r: r.pk,
+    )
+    grupos_pdf = [{
+        'equipe': g['equipe'].nome if g['equipe'] else None,
+        'horas': g['horas'],
+        'valor': g['valor'],
+        'profissionais': [{
+            'nome': r.extracao.medico_nome,
+            'periodo': f"{r.extracao.data_ini} a {r.extracao.data_fim}",
+            'competencia': r.competencia_fmt,
+            'horas': r.horas_total_final,
+            'valor': r.valor_total_final,
+            'linhas': [{
+                'especialidade': i.especialidade, 'minutos': i.minutos,
+                'horas': i.horas_final, 'valor_hora': i.valor_hora, 'total': i.total_final,
+            } for i in r.itens.filter(marcado=True).order_by('ordem')],
+        } for r in g['itens']],
+    } for g in grupos]
+
+    competencias = sorted({r.competencia_fmt for r in lista if r.competencia})
+    pdf = _gerar(
+        'Relatório de Repasse Consolidado',
+        'Competência: ' + (', '.join(competencias) or '-') + f' | {len(lista)} repasse(s)',
+        grupos_pdf, resumo,
+        sum((r.horas_total_final for r in lista), Decimal('0')),
+        sum((r.valor_total_final for r in lista), Decimal('0')))
+    auditoria.registrar(request, 'EXPORTACAO',
+                        f'PDF consolidado: {len(lista)} repasse(s)')
+    resp = HttpResponse(pdf, content_type='application/pdf')
+    resp['Content-Disposition'] = f'attachment; filename="relatorio_repasse_{_t.strftime("%Y-%m-%d_%H%M")}.pdf"'
+    return resp
+
+
+# =========================================================
+# REABRIR VÁRIOS REPASSES (somente administrador)
+# =========================================================
+@admin_required
 @require_POST
 def reabrir_varios(request):
     """
-    Reabre vários repasses de uma vez.
-    Exige usuário + senha de um superuser (admin).
+    Reabre vários repasses de uma vez. Exige usuário administrador logado e
+    um motivo, registrado na auditoria de cada repasse.
     """
-    from django.contrib.auth import authenticate
-
     ids_str = request.POST.getlist('repasses')
-    admin_user = request.POST.get('admin_user', '').strip()
-    admin_pass = request.POST.get('admin_pass', '')
+    motivo = request.POST.get('motivo', '').strip()
 
     if not ids_str:
         messages.warning(request, 'Selecione pelo menos um repasse.')
         return redirect('siresp_app:relatorios_home')
 
-    if not admin_user or not admin_pass:
-        messages.error(request, 'Informe usuário e senha do admin.')
+    if len(motivo) < 5:
+        messages.error(request, 'Informe o motivo da reabertura (mínimo 5 caracteres).')
         return redirect('siresp_app:relatorios_home')
 
-    # Autentica
-    user = authenticate(request, username=admin_user, password=admin_pass)
-    if user is None:
-        messages.error(request, 'Usuário ou senha do admin inválidos.')
-        return redirect('siresp_app:relatorios_home')
-
-    if not user.is_superuser:
-        messages.error(
-            request,
-            f'O usuário "{admin_user}" não é admin. Apenas admins podem reabrir.'
-        )
-        return redirect('siresp_app:relatorios_home')
-
-    # Busca os repasses
     try:
         ids = [int(i) for i in ids_str]
     except ValueError:
         messages.error(request, 'IDs inválidos.')
         return redirect('siresp_app:relatorios_home')
 
-    repasses = Repasse.objects.filter(
-        pk__in=ids,
-        usuario_web=request.user,
-    )
-
     reabertos = 0
     ignorados = 0
-
-    for r in repasses:
+    for r in Repasse.objects.filter(pk__in=ids).select_related('extracao'):
         if r.status != 'finalizado':
             ignorados += 1
             continue
 
+        competencia = r.competencia_fmt
+        valor = r.valor_total_final
         r.status = 'rascunho'
         r.finalizado_em = None
-        r.save(update_fields=['status', 'finalizado_em', 'atualizado_em'])
+        r.competencia = None
+        r.save(update_fields=['status', 'finalizado_em', 'competencia', 'atualizado_em'])
+        auditoria.registrar(
+            request, 'REPASSE_REABERTO',
+            f'Reaberto em lote (era competência {competencia}, R$ {valor}). Motivo: {motivo}',
+            repasse=r,
+            detalhes=[{'item': '', 'campo': 'Motivo', 'de': '', 'para': motivo}])
         reabertos += 1
 
-    if reabertos > 0:
-        messages.success(
-            request,
-            f'{reabertos} repasse(s) reaberto(s) por "{user.username}".'
-        )
-    if ignorados > 0:
-        messages.info(
-            request,
-            f'{ignorados} repasse(s) ignorado(s) (não estavam finalizados).'
-        )
-    if reabertos == 0 and ignorados == 0:
+    if reabertos:
+        messages.success(request, f'{reabertos} repasse(s) reaberto(s).')
+    if ignorados:
+        messages.info(request, f'{ignorados} repasse(s) ignorado(s) (não estavam finalizados).')
+    if not reabertos and not ignorados:
         messages.warning(request, 'Nenhum repasse encontrado.')
 
     return redirect('siresp_app:relatorios_home')

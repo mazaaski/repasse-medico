@@ -1,0 +1,133 @@
+{% extends "siresp_app/base.html" %}
+
+{% block title %}Repasse em Lote{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2><i class="bi bi-cash-stack"></i> Repasse em Lote</h2>
+</div>
+
+<div class="alert alert-info small">
+    Selecione as extrações do mês. Para cada uma o sistema cria o repasse aplicando as regras de
+    minutos e os grupos de valores, e <strong>já marca as especialidades</strong> que o profissional
+    tem cadastradas nas regras. Ao final você vê um relatório com horas e valores.
+    Nada é finalizado automaticamente: os repasses ficam em rascunho para conferência.
+    Rascunhos podem ser <strong>refeitos</strong> a qualquer momento (útil depois de ajustar regras ou grupos);
+    repasses finalizados ficam protegidos.
+</div>
+
+<form method="get" class="row g-2 mb-3">
+    <div class="col-auto">
+        <select name="mes" class="form-select">
+            {% for n, nome in meses %}
+            <option value="{{ n }}" {% if n == mes %}selected{% endif %}>{{ nome }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-auto">
+        <select name="ano" class="form-select">
+            {% for a in anos %}
+            <option value="{{ a }}" {% if a == ano %}selected{% endif %}>{{ a }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-auto"><button class="btn btn-primary">Ver mês</button></div>
+</form>
+
+<form method="post" action="{% url 'siresp_app:repasse_lote_gerar' %}">
+    {% csrf_token %}
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <div>
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="marcar('sem')">
+                    Sem repasse ({{ sem_repasse }})</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="marcar('rascunho')">
+                    Rascunhos ({{ rascunhos }})</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="marcar('todos')">
+                    Todos editáveis</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="marcar('nenhum')">
+                    Desmarcar</button>
+                <span class="ms-2"><strong id="qtd">0</strong> selecionadas</span>
+            </div>
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+                <button class="btn btn-success" onclick="return validar();">
+                    <i class="bi bi-play-fill"></i> Gerar repasses selecionados
+                </button>
+                {% if ids_mes %}
+                <a href="{% url 'siresp_app:repasse_lote_relatorio' %}?mes={{ mes }}&ano={{ ano }}"
+                   class="btn btn-outline-primary">
+                    <i class="bi bi-clipboard-data"></i> Relatório e edição do mês
+                </a>
+                {% endif %}
+            </div>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr><th style="width:40px;"></th><th>Profissional</th><th>Período</th>
+                        <th>Itens</th><th>Repasse</th></tr>
+                </thead>
+                <tbody>
+                {% for l in linhas %}
+                    <tr>
+                        <td class="text-center">
+                            <input type="checkbox" name="extracao_ids" value="{{ l.ext.pk }}"
+                                   class="form-check-input chk {% if not l.repasse %}sem{% elif not l.repasse.finalizado %}rascunho{% endif %}"
+                                   {% if l.repasse.finalizado %}disabled title="Finalizado: reabra o repasse para refazer"{% endif %}>
+                        </td>
+                        <td>{{ l.ext.medico_nome }}</td>
+                        <td class="small">{{ l.ext.data_ini }} a {{ l.ext.data_fim }}</td>
+                        <td>{{ l.ext.total_itens }}</td>
+                        <td>
+                            {% if l.repasse %}
+                                <a href="{% url 'siresp_app:repasse_ver' l.repasse.pk %}">
+                                    {% if l.repasse.finalizado %}<span class="badge bg-success">Finalizado</span>
+                                    {% else %}<span class="badge bg-warning text-dark">Rascunho</span>{% endif %}
+                                </a>
+                            {% else %}
+                                <span class="badge bg-secondary">Sem repasse</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="5" class="text-center text-muted p-4">
+                        Nenhuma extração neste mês. Faça as extrações na aba Produção.
+                    </td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</form>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function contar() {
+    document.getElementById('qtd').textContent = document.querySelectorAll('.chk:checked').length;
+}
+function marcar(modo) {
+    document.querySelectorAll('.chk').forEach(c => {
+        if (c.disabled) { c.checked = false; return; }
+        c.checked = modo === 'todos' ||
+            (modo === 'sem' && c.classList.contains('sem')) ||
+            (modo === 'rascunho' && c.classList.contains('rascunho'));
+    });
+    contar();
+}
+function validar() {
+    if (!document.querySelectorAll('.chk:checked').length) {
+        alert('Selecione pelo menos uma extração.');
+        return false;
+    }
+    const refazer = document.querySelectorAll('.chk.rascunho:checked').length;
+    if (refazer) {
+        return confirm(`${refazer} rascunho(s) serão refeitos do zero com as regras atuais. ` +
+                       'Ajustes manuais feitos neles serão perdidos. Continuar?');
+    }
+    return true;
+}
+document.querySelectorAll('.chk').forEach(c => c.addEventListener('change', contar));
+marcar({% if sem_repasse %}'sem'{% else %}'rascunho'{% endif %});
+</script>
+{% endblock %}

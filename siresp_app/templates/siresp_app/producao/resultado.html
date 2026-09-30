@@ -28,12 +28,25 @@
            class="btn btn-info">
             <i class="bi bi-filetype-json"></i> JSON
         </a>
+        {% if not outro_dono %}
         <a href="{% url 'siresp_app:producao_ir_repasse' extracao.pk %}"
            class="btn btn-warning">
             <i class="bi bi-cash-coin"></i> Usar no Repasse
         </a>
+        {% elif repasse %}
+        <a href="{% url 'siresp_app:repasse_ver' repasse.pk %}" class="btn btn-warning">
+            <i class="bi bi-cash-coin"></i> Ver repasse
+        </a>
+        {% endif %}
     </div>
 </div>
+
+{% if outro_dono %}
+<div class="alert alert-secondary py-2 small">
+    <i class="bi bi-eye"></i> <strong>Modo consulta:</strong> extração feita por
+    <strong>{{ extracao.usuario_web.username }}</strong>. Você vê os mesmos dados, mas só ele(a) gera o repasse a partir dela.
+</div>
+{% endif %}
 
 <div class="card">
     <div class="card-header">

@@ -112,7 +112,10 @@ class SirespScraper:
         if self.callback_log:
             self.callback_log(msg)
         else:
-            print(msg)
+            try:
+                print(msg)
+            except UnicodeEncodeError:
+                print(str(msg).encode('ascii', 'replace').decode('ascii'))
 
     # =========================================================
     # FECHAR ALERTA DO SIRESP (SweetAlert2)
@@ -1037,14 +1040,19 @@ class SirespScraper:
         self._tratar_alerta()
 
         self._entrar_no_iframe_relatorio()
-        WebDriverWait(self.driver, 30).until(
-            EC.presence_of_element_located(
-                (
-                    By.XPATH,
-                    "//table[contains(., 'Especialidade Médica e Grupo de Cota')]",
+        try:
+            WebDriverWait(self.driver, 20).until(
+                EC.presence_of_element_located(
+                    (
+                        By.XPATH,
+                        "//table[contains(., 'Especialidade Médica e Grupo de Cota')]",
+                    )
                 )
             )
-        )
+        except TimeoutException:
+            # Sem tabela = médico sem produção no período
+            self.log("ℹ️ Tabela de produção não apareceu: sem produção no período")
+            return []
         self.log("✅ Relatório carregado. Extraindo...")
 
         tabelas = self.driver.find_elements(By.TAG_NAME, "table")

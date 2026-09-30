@@ -3,6 +3,15 @@ Configurações Django para o projeto SIRESP Web.
 """
 from pathlib import Path
 import os
+import sys
+
+# Console do Windows (cp1252) não imprime os emojis dos logs; sem isso o
+# print() levanta UnicodeEncodeError e derruba o login no SIRESP.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -14,10 +23,11 @@ SECRET_KEY = os.environ.get(
     'django-insecure-fallback-apenas-para-dev-nao-usar-em-producao'
 )
 
-DEBUG = False
+# DEBUG=True por padrão para facilitar testes em localhost.
+# Em produção defina a variável de ambiente DJANGO_DEBUG=0.
+DEBUG = os.environ.get('DJANGO_DEBUG', '1') == '1'
 
 ALLOWED_HOSTS = [
-    '*',
     '127.0.0.1',
     'localhost',
     '172.16.0.20',
@@ -64,6 +74,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'siresp_app.context_processors.papel',
             ],
         },
     },
@@ -97,6 +108,7 @@ USE_TZ = True
 # =========================================================
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+STATICFILES_DIRS = [BASE_DIR / 'static']
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
@@ -112,6 +124,11 @@ LOGIN_REDIRECT_URL = 'siresp_app:home'
 LOGOUT_REDIRECT_URL = 'siresp_app:login'
 
 
+# Bootstrap usa "danger" (o Django usa "error")
+from django.contrib.messages import constants as _msg
+MESSAGE_TAGS = {_msg.ERROR: 'danger'}
+
+
 # =========================================================
 # SESSÃO — expira em 8h
 # =========================================================
@@ -123,6 +140,8 @@ SESSION_EXPIRE_AT_BROWSER_CLOSE = False
 # CSRF / HTTPS
 # =========================================================
 CSRF_TRUSTED_ORIGINS = [
+    'http://127.0.0.1:8000',
+    'http://localhost:8000',
     'http://127.0.0.1:8002',
     'http://localhost:8002',
     'http://172.16.0.20:8002',

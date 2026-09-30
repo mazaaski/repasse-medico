@@ -1,0 +1,53 @@
+{% extends "siresp_app/base.html" %}
+
+{% block title %}{% if equipe %}Editar equipe{% else %}Nova equipe{% endif %}{% endblock %}
+
+{% block content %}
+<h2 class="mb-3"><i class="bi bi-people-fill"></i> {% if equipe %}Editar equipe{% else %}Nova equipe{% endif %}</h2>
+
+<form method="post">
+    {% csrf_token %}
+    <div class="card mb-3">
+        <div class="card-body">
+            <label class="form-label">Nome da equipe (nome da empresa faturada)</label>
+            <input name="nome" class="form-control" value="{{ equipe.nome }}" required maxlength="200">
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span>Profissionais da equipe</span>
+            <input type="search" id="filtro" class="form-control form-control-sm" style="max-width:260px;"
+                   placeholder="Filtrar por nome...">
+        </div>
+        <div class="card-body" style="max-height:420px; overflow-y:auto;">
+            {% for x in profissionais %}
+            <div class="form-check item-prof">
+                <input class="form-check-input" type="checkbox" name="membros" value="{{ x.p.pk }}"
+                       id="p{{ x.p.pk }}" {% if x.marcado %}checked{% endif %} {% if x.bloqueado %}disabled{% endif %}>
+                <label class="form-check-label {% if x.bloqueado %}text-muted{% endif %}" for="p{{ x.p.pk }}">
+                    {{ x.p.nome }}
+                    {% if x.bloqueado %}<span class="badge bg-light text-dark border">já na equipe {{ x.p.equipe.nome }}</span>{% endif %}
+                </label>
+            </div>
+            {% empty %}
+            <div class="text-muted">Nenhum profissional na base. Importe a planilha de agendas.</div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <button class="btn btn-primary"><i class="bi bi-save"></i> Salvar equipe</button>
+    <a href="{% url 'siresp_app:equipes_lista' %}" class="btn btn-secondary">Cancelar</a>
+</form>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.getElementById('filtro').addEventListener('input', e => {
+    const t = e.target.value.trim().toLowerCase();
+    document.querySelectorAll('.item-prof').forEach(el => {
+        el.style.display = el.textContent.toLowerCase().includes(t) ? '' : 'none';
+    });
+});
+</script>
+{% endblock %}

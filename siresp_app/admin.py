@@ -2,7 +2,7 @@ from django.contrib import admin
 from .models import (
     GrupoValor, EspecialidadeGrupo,
     EspecialidadeConhecida, ConfiguracaoLogin,
-    RegraMinuto,
+    RegraMinuto, Profissional, LogAuditoria,
     SessaoSiresp, Extracao, ItemProducao,
     Repasse, ItemRepasse,
 )
@@ -117,3 +117,27 @@ class ItemRepasseAdmin(admin.ModelAdmin):
     )
     list_filter = ('marcado', 'bonus_percent', 'faltou_regra')
     search_fields = ('especialidade', 'repasse__extracao__medico_nome')
+
+@admin.register(Profissional)
+class ProfissionalAdmin(admin.ModelAdmin):
+    list_display = ('nome', 'ativo', 'criado_em')
+    list_filter = ('ativo',)
+    search_fields = ('nome', 'nome_norm')
+
+
+@admin.register(LogAuditoria)
+class LogAuditoriaAdmin(admin.ModelAdmin):
+    """Somente consulta: a trilha não pode ser criada, alterada nem apagada."""
+    list_display = ('criado_em', 'usuario_nome', 'acao', 'descricao', 'profissional', 'repasse_id')
+    list_filter = ('acao', 'usuario_nome')
+    search_fields = ('descricao', 'profissional', 'usuario_nome')
+    date_hierarchy = 'criado_em'
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False

@@ -1,14 +1,17 @@
 import os
+from decimal import Decimal
 import re
 import tempfile
 import unicodedata
 
 from django.shortcuts import render, redirect, get_object_or_404
-from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.db import models
 from django.views.decorators.http import require_POST
 
+from django.contrib.auth.decorators import login_required
+from ..permissions import admin_required, eh_admin
+from ..services import auditoria
 from ..models import (
     GrupoValor, EspecialidadeGrupo, EspecialidadeConhecida,
 )
@@ -37,7 +40,7 @@ def lista_grupos(request):
     })
 
 
-@login_required
+@admin_required
 def novo_grupo(request):
     if request.method == 'POST':
         return _salvar_grupo(request)
@@ -48,7 +51,7 @@ def novo_grupo(request):
     })
 
 
-@login_required
+@admin_required
 def editar_grupo(request, pk):
     grupo = get_object_or_404(GrupoValor, pk=pk)
     if request.method == 'POST':
@@ -98,6 +101,14 @@ def _salvar_grupo(request, grupo=None):
         )
         return redirect(request.path)
 
+    novo = grupo is None
+    if novo:
+        antes = {}
+    else:
+        antes = {
+            'nome': grupo.nome, 'valor_base': grupo.valor_base, 'bonus': grupo.bonus,
+            'especialidades': ', '.join(sorted(grupo.especialidades.values_list('nome', flat=True))),
+        }
     if grupo is None:
         grupo = GrupoValor()
     grupo.nome = nome
@@ -109,18 +120,62 @@ def _salvar_grupo(request, grupo=None):
     for esp_nome in especialidades:
         EspecialidadeGrupo.objects.create(grupo=grupo, nome=esp_nome)
 
+    depois = {
+        'nome': grupo.nome, 'valor_base': Decimal(str(valor_base)), 'bonus': Decimal(str(bonus)),
+        'especialidades': ', '.join(sorted(especialidades)),
+    }
+    rotulos = {'nome': 'Nome', 'valor_base': 'Valor base', 'bonus': 'Bônus 100%',
+               'especialidades': 'Especialidades'}
+    if novo:
+        auditoria.registrar(
+            request, 'GRUPO_CRIADO',
+            f'Grupo "{grupo.nome}": base R$ {depois["valor_base"]:.2f}, bônus R$ {depois["bonus"]:.2f}',
+            detalhes=auditoria.diff_simples({}, depois, rotulos))
+    else:
+        mudancas = auditoria.diff_simples(antes, depois, rotulos)
+        if mudancas:
+            auditoria.registrar(request, 'GRUPO_EDITADO', f'Grupo "{grupo.nome}" editado',
+                                detalhes=mudancas)
+
     messages.success(request, 'Grupo salvo com sucesso.')
     return redirect('siresp_app:config_lista')
 
 
-@login_required
+@admin_required
+@require_POST
 def remover_grupo(request, pk):
     grupo = get_object_or_404(GrupoValor, pk=pk)
-    if grupo.e_padrao:
-        messages.error(request, 'Não é possível remover o grupo "Padrão".')
-        return redirect('siresp_app:config_lista')
+    nome = grupo.nome
+    resumo = f'base R$ {grupo.valor_base}, bônus R$ {grupo.bonus}'
     grupo.delete()
-    messages.success(request, 'Grupo removido.')
+    auditoria.registrar(request, 'GRUPO_EXCLUIDO', f'Grupo "{nome}" excluído ({resumo})')
+    messages.success(request, f'Grupo "{nome}" removido.')
+    return redirect('siresp_app:config_lista')
+
+
+@admin_required
+@require_POST
+def excluir_grupos(request):
+    """Exclui os grupos marcados (ou todos, com todos=1)."""
+    if request.POST.get('todos') == '1':
+        qs = GrupoValor.objects.all()
+    else:
+        try:
+            ids = [int(i) for i in request.POST.getlist('grupo_ids')]
+        except ValueError:
+            messages.error(request, 'IDs inválidos.')
+            return redirect('siresp_app:config_lista')
+        if not ids:
+            messages.warning(request, 'Selecione pelo menos um grupo.')
+            return redirect('siresp_app:config_lista')
+        qs = GrupoValor.objects.filter(pk__in=ids)
+
+    nomes = list(qs.values_list('nome', flat=True))
+    qtd = len(nomes)
+    qs.delete()
+    auditoria.registrar(request, 'GRUPO_EXCLUIDO',
+                        f'{qtd} grupo(s) excluído(s): ' + ', '.join(nomes))
+    messages.success(request, f'{qtd} grupo(s) excluído(s).')
     return redirect('siresp_app:config_lista')
 
 
@@ -135,7 +190,7 @@ def lista_especialidades(request):
     })
 
 
-@login_required
+@admin_required
 def nova_especialidade(request):
     if request.method == 'POST':
         nome = request.POST.get('nome', '').strip()
@@ -153,6 +208,10 @@ def nova_especialidade(request):
 def importar_planilha(request):
     from ..services.planilha_service import ler_planilha
     from ..services.valores_service import registrar_regras
+
+    if request.method == 'POST' and not eh_admin(request.user):
+        messages.error(request, 'Somente administradores podem importar a planilha.')
+        return redirect('siresp_app:config_importar')
 
     if request.method == 'POST':
         arquivo = request.FILES.get('arquivo')
@@ -194,11 +253,16 @@ def importar_planilha(request):
             return redirect('siresp_app:config_importar')
 
         stats = registrar_regras(linhas)
+        auditoria.registrar(
+            request, 'IMPORTACAO',
+            f'Planilha "{nome}": {stats["linhas"]} linhas, {stats["pares"]} pares, '
+            f'{stats["novos_prof"]} profissionais novos')
         messages.success(
             request,
             f'✅ Importação concluída! '
             f'{stats["linhas"]} linhas, {stats["pares"]} pares, '
-            f'{stats["novas_esp"]} especialidades novas.'
+            f'{stats["novas_esp"]} especialidades novas, '
+            f'{stats["novos_prof"]} profissionais novos na base.'
         )
         return redirect('siresp_app:config_regras')
 
@@ -232,10 +296,12 @@ def lista_regras(request):
     })
 
 
-@login_required
+@admin_required
+@require_POST
 def limpar_regras(request):
     from ..services.valores_service import limpar_regras as _limpar
     qtd = _limpar()
+    auditoria.registrar(request, 'REGRAS_LIMPAS', f'{qtd} regra(s) de minutos apagadas')
     messages.success(request, f'{qtd} regras removidas.')
     return redirect('siresp_app:config_regras')
 
@@ -243,7 +309,7 @@ def limpar_regras(request):
 # =========================================================
 # REGRAS — CRIAR / EDITAR / DELETAR MANUALMENTE
 # =========================================================
-@login_required
+@admin_required
 @require_POST
 def nova_regra(request):
     from ..services.regras_service import criar_ou_atualizar_regra
@@ -285,6 +351,17 @@ def nova_regra(request):
             profissional, especialidade, minutos,
             valor_base, bonus,
         )
+        auditoria.registrar(
+            request, 'REGRA_CRIADA' if criado else 'REGRA_EDITADA',
+            f'{obj.profissional_norm} | {obj.especialidade_norm}',
+            profissional=obj.profissional_norm,
+            detalhes=[
+                {'item': obj.especialidade_norm, 'campo': 'Minutos', 'de': '', 'para': obj.minutos_formatados},
+                {'item': obj.especialidade_norm, 'campo': 'Valor base (override)', 'de': '',
+                 'para': str(obj.valor_base_override or '')},
+                {'item': obj.especialidade_norm, 'campo': 'Bônus (override)', 'de': '',
+                 'para': str(obj.bonus_override or '')},
+            ])
         if criado:
             messages.success(request, f'Regra criada: {obj}')
         else:
@@ -292,13 +369,15 @@ def nova_regra(request):
 
         if especialidade:
             EspecialidadeConhecida.objects.get_or_create(nome=especialidade)
+        from ..services.profissionais_service import garantir_profissional
+        garantir_profissional(profissional)
     except Exception as e:
         messages.error(request, f'Erro: {e}')
 
     return redirect('siresp_app:config_regras')
 
 
-@login_required
+@admin_required
 def editar_regra(request, pk):
     from ..models import RegraMinuto
     from ..services.regras_service import criar_ou_atualizar_regra
@@ -337,10 +416,37 @@ def editar_regra(request, pk):
                 pass
 
         try:
-            criar_ou_atualizar_regra(
+            antes_regra = {
+                'prof': regra.profissional_norm, 'esp': regra.especialidade_norm,
+                'minutos': regra.minutos_formatados,
+                'base': regra.valor_base_override if regra.valor_base_override is not None else '',
+                'bonus': regra.bonus_override if regra.bonus_override is not None else '',
+            }
+            prof_n = _normalizar(profissional)
+            esp_n = _normalizar(especialidade)
+            if not prof_n or not esp_n or not minutos:
+                raise ValueError('Profissional, especialidade e minutos são obrigatórios.')
+            if (prof_n, esp_n) != (regra.profissional_norm, regra.especialidade_norm):
+                # Chave mudou: remove a antiga para não deixar regra duplicada
+                regra.delete()
+            nova_obj, _ = criar_ou_atualizar_regra(
                 profissional, especialidade, minutos,
                 valor_base, bonus,
             )
+            depois_regra = {
+                'prof': nova_obj.profissional_norm, 'esp': nova_obj.especialidade_norm,
+                'minutos': nova_obj.minutos_formatados,
+                'base': nova_obj.valor_base_override if nova_obj.valor_base_override is not None else '',
+                'bonus': nova_obj.bonus_override if nova_obj.bonus_override is not None else '',
+            }
+            mudancas = auditoria.diff_simples(antes_regra, depois_regra, {
+                'prof': 'Profissional', 'esp': 'Especialidade', 'minutos': 'Minutos',
+                'base': 'Valor base (override)', 'bonus': 'Bônus (override)'})
+            if mudancas:
+                auditoria.registrar(
+                    request, 'REGRA_EDITADA',
+                    f'{nova_obj.profissional_norm} | {nova_obj.especialidade_norm}',
+                    profissional=nova_obj.profissional_norm, detalhes=mudancas)
             messages.success(request, 'Regra atualizada.')
         except Exception as e:
             messages.error(request, f'Erro: {e}')
@@ -353,10 +459,15 @@ def editar_regra(request, pk):
     })
 
 
-@login_required
+@admin_required
 @require_POST
 def deletar_regra(request, pk):
     from ..services.regras_service import deletar_regra as _del
+    from ..models import RegraMinuto
+    alvo = RegraMinuto.objects.filter(pk=pk).first()
+    desc = f'{alvo.profissional_norm} | {alvo.especialidade_norm} ({alvo.minutos_formatados} min)' if alvo else f'#{pk}'
     _del(pk)
+    auditoria.registrar(request, 'REGRA_EXCLUIDA', desc,
+                        profissional=alvo.profissional_norm if alvo else '')
     messages.success(request, 'Regra removida.')
     return redirect('siresp_app:config_regras')

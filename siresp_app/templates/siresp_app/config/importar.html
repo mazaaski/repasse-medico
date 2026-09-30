@@ -23,6 +23,8 @@
             <strong>INTERVALO ENTRE AS CONSULTAS</strong>.
         </div>
 
+        {% include "siresp_app/_modo_consulta.html" %}
+        {% if eh_admin %}
         <form method="post" enctype="multipart/form-data" class="card">
             {% csrf_token %}
             <div class="card-body">
@@ -47,6 +49,12 @@
                 </button>
             </div>
         </form>
+        {% else %}
+        <div class="card"><div class="card-body text-muted">
+            A importação altera regras e a base de profissionais, por isso é feita por um administrador.
+            <a href="{% url 'siresp_app:config_regras' %}">Ver regras atuais</a>
+        </div></div>
+        {% endif %}
     </div>
 </div>
 {% endblock %}

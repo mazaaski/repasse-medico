@@ -6,23 +6,28 @@
 <div class="d-flex justify-content-between align-items-center mb-3">
     <h2><i class="bi bi-clock-history"></i> Regras de Minutos</h2>
     <div>
+        {% if eh_admin %}
         <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#modalNovaRegra">
             <i class="bi bi-plus-lg"></i> Nova Regra
         </button>
         <a href="{% url 'siresp_app:config_importar' %}" class="btn btn-primary">
             <i class="bi bi-upload"></i> Importar Planilha
         </a>
-        <a href="{% url 'siresp_app:config_limpar_regras' %}"
-           class="btn btn-outline-danger"
-           onclick="return confirm('Apagar TODAS as {{ total }} regras?');">
-            <i class="bi bi-trash"></i> Limpar Tudo
-        </a>
+        <form method="post" action="{% url 'siresp_app:config_limpar_regras' %}" class="d-inline"
+              onsubmit="return confirm('Apagar TODAS as {{ total }} regras?');">
+            {% csrf_token %}
+            <button class="btn btn-outline-danger">
+                <i class="bi bi-trash"></i> Limpar Tudo
+            </button>
+        </form>
+        {% endif %}
         <a href="{% url 'siresp_app:config_lista' %}" class="btn btn-outline-secondary">
             <i class="bi bi-arrow-left"></i> Voltar
         </a>
     </div>
 </div>
 
+{% include "siresp_app/_modo_consulta.html" %}
 <div class="card mb-3">
     <div class="card-body">
         <form method="get" class="row g-2">
@@ -80,6 +85,7 @@
                             <span class="text-muted">padrão</span>
                         {% endif %}
                     </td>
+                    {% if eh_admin %}
                     <td class="text-end">
                         <a href="{% url 'siresp_app:config_editar_regra' r.pk %}"
                            class="btn btn-sm btn-outline-primary">
@@ -95,6 +101,7 @@
                             </button>
                         </form>
                     </td>
+                    {% endif %}
                 </tr>
                 {% empty %}
                 <tr>
@@ -108,6 +115,7 @@
     </div>
 </div>
 
+{% if eh_admin %}
 <!-- Modal Nova Regra -->
 <div class="modal fade" id="modalNovaRegra" tabindex="-1">
     <div class="modal-dialog">
@@ -167,4 +175,5 @@
         </form>
     </div>
 </div>
+{% endif %}
 {% endblock %}

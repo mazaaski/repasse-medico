@@ -20,39 +20,73 @@
             <i class="bi bi-arrow-left"></i> Voltar
         </a>
 
-        {% if repasse.status != 'finalizado' %}
+        {% if not bloqueado %}
             <button class="btn btn-outline-info btn-sm" onclick="recalcular()">
                 <i class="bi bi-arrow-clockwise"></i> Recalcular
             </button>
         {% endif %}
 
-        <a href="{% url 'siresp_app:repasse_excel' repasse.pk %}"
-           class="btn btn-success btn-sm"
-           onclick="return confirm('Exportar apenas as linhas marcadas?');">
+        {% if repasse.finalizado %}
+        <a href="{% url 'siresp_app:repasse_excel' repasse.pk %}" class="btn btn-success btn-sm">
             <i class="bi bi-file-earmark-excel"></i> Exportar Excel
         </a>
+        {% else %}
+        <button class="btn btn-success btn-sm" disabled
+                title="Finalize o repasse (com o mês de competência) para liberar o Excel">
+            <i class="bi bi-file-earmark-excel"></i> Exportar Excel
+        </button>
+        {% endif %}
 
         {% if repasse.status == 'finalizado' %}
             <span class="badge bg-success py-2 px-3">
                 <i class="bi bi-check-circle"></i>
                 FINALIZADO em {{ repasse.finalizado_em|date:"d/m/Y H:i" }}
+                · Competência {{ repasse.competencia_fmt }}
             </span>
+            {% if eh_admin %}
             <button class="btn btn-warning btn-sm" onclick="reabrirRepasse()">
-                <i class="bi bi-unlock"></i> Reabrir
+                <i class="bi bi-unlock"></i> Reabrir (admin)
             </button>
+            {% else %}
+            <span class="small text-muted" title="Somente administradores podem reabrir um repasse finalizado">
+                <i class="bi bi-shield-lock"></i> reabrir: só admin</span>
+            {% endif %}
+        {% elif outro_dono %}
+            <span class="badge bg-warning text-dark py-2 px-3">RASCUNHO · modo consulta</span>
         {% else %}
-            <button class="btn btn-primary btn-sm" onclick="finalizarRepasse()">
-                <i class="bi bi-check-circle"></i> Finalizar Repasse
-            </button>
+            <div class="input-group input-group-sm" style="width:auto;">
+                <span class="input-group-text" title="Mês que está sendo pago (o repasse é feito no mês seguinte)">
+                    Competência</span>
+                <input type="month" id="competencia" class="form-control"
+                       value="{{ competencia_padrao }}" max="{{ competencia_padrao }}">
+                <button class="btn btn-primary" onclick="finalizarRepasse()">
+                    <i class="bi bi-check-circle"></i> Finalizar Repasse
+                </button>
+            </div>
         {% endif %}
     </div>
 </div>
 
+{% if outro_dono %}
+<div class="alert alert-secondary">
+    <i class="bi bi-eye"></i> <strong>Modo consulta:</strong> este repasse pertence a
+    <strong>{{ repasse.usuario_web.username }}</strong>. Você vê os mesmos dados, mas a edição é feita pelo
+    próprio usuário{% if eh_admin %}; como administrador você pode reabri-lo se estiver finalizado{% endif %}.
+    <a href="{% url 'siresp_app:auditoria_lista' %}?repasse={{ repasse.pk }}" class="alert-link">Ver histórico de alterações</a>
+</div>
+{% else %}
+<div class="small text-end mb-2">
+    <a href="{% url 'siresp_app:auditoria_lista' %}?repasse={{ repasse.pk }}">
+        <i class="bi bi-journal-text"></i> Histórico de alterações deste repasse</a>
+</div>
+{% endif %}
+
 {% if repasse.status == 'finalizado' %}
 <div class="alert alert-success">
     <i class="bi bi-lock-fill"></i>
-    Este repasse está <strong>finalizado</strong>. Para editar, clique em
-    <strong>"🔓 Reabrir"</strong>.
+    Este repasse está <strong>finalizado</strong>.
+    {% if eh_admin %}Para editar, um administrador precisa reabri-lo (o motivo fica registrado).
+    {% else %}Para editar, peça a um administrador para reabri-lo.{% endif %}
 </div>
 {% endif %}
 
@@ -141,7 +175,7 @@
                                class="form-check-input chk-marcado"
                                data-id="{{ item.id }}"
                                {% if item.marcado %}checked{% endif %}
-                               {% if repasse.status == 'finalizado' %}disabled{% endif %}>
+                               {% if bloqueado %}disabled{% endif %}>
                     </td>
                     <td>
                         <strong>{{ item.especialidade }}</strong>
@@ -179,7 +213,7 @@
                     <td class="text-center">
                         <select class="form-select form-select-sm sel-bonus-perc"
                                 data-id="{{ item.id }}"
-                                {% if repasse.status == 'finalizado' %}disabled{% endif %}>
+                                {% if bloqueado %}disabled{% endif %}>
                             <option value="0%" {% if item.bonus_percent == '0%' %}selected{% endif %}>0%</option>
                             <option value="50%" {% if item.bonus_percent == '50%' %}selected{% endif %}>50%</option>
                             <option value="100%" {% if item.bonus_percent == '100%' %}selected{% endif %}>100%</option>
@@ -254,7 +288,8 @@
 // CONFIG
 // =========================================================
 const REPASSE_ID = {{ repasse.pk }};
-const FINALIZADO = {% if repasse.status == 'finalizado' %}true{% else %}false{% endif %};
+const FINALIZADO = {% if bloqueado %}true{% else %}false{% endif %};
+const MSG_BLOQUEIO = {% if outro_dono %}'Este repasse pertence a outro usuário (modo consulta).'{% else %}'Esse repasse está finalizado. Reabra pra editar.'{% endif %};
 
 // =========================================================
 // LOG
@@ -300,7 +335,7 @@ function postJSON(url, body) {
 // =========================================================
 function atualizarItem(itemId, campo, valor) {
     if (FINALIZADO) {
-        alert('Esse repasse está finalizado. Reabra pra editar.');
+        alert(MSG_BLOQUEIO);
         return;
     }
     log(`→ Atualizar item ${itemId}: ${campo} = ${valor}`);
@@ -396,7 +431,7 @@ document.querySelectorAll('.valor-bonus').forEach(el => {
 
 function abrirPopupEdicao(itemId, campo, valorAtual) {
     if (FINALIZADO) {
-        alert('Esse repasse está finalizado. Reabra pra editar.');
+        alert(MSG_BLOQUEIO);
         return;
     }
 
@@ -422,7 +457,7 @@ function abrirPopupEdicao(itemId, campo, valorAtual) {
 // =========================================================
 function marcarTodas(marcar) {
     if (FINALIZADO) {
-        alert('Esse repasse está finalizado. Reabra pra editar.');
+        alert(MSG_BLOQUEIO);
         return;
     }
     log(`→ Marcar todas: ${marcar}`);
@@ -438,7 +473,7 @@ function marcarTodas(marcar) {
 
 function arredondar(modo) {
     if (FINALIZADO) {
-        alert('Esse repasse está finalizado. Reabra pra editar.');
+        alert(MSG_BLOQUEIO);
         return;
     }
     log(`→ Arredondar: ${modo}`);
@@ -454,7 +489,7 @@ function arredondar(modo) {
 
 function recalcular() {
     if (FINALIZADO) {
-        alert('Esse repasse está finalizado. Reabra pra editar.');
+        alert(MSG_BLOQUEIO);
         return;
     }
     if (!confirm('Recalcular TODOS os itens a partir das Regras e Grupos atuais? Suas edições manuais serão perdidas.')) return;
@@ -469,7 +504,7 @@ function recalcular() {
 
 function zerar() {
     if (FINALIZADO) {
-        alert('Esse repasse está finalizado. Reabra pra editar.');
+        alert(MSG_BLOQUEIO);
         return;
     }
     if (!confirm('Zerar Minutos, Valor Base e Bônus de TODAS as linhas?')) return;
@@ -489,7 +524,7 @@ function zerar() {
 // =========================================================
 function escolherMinuto(itemId, minutos) {
     if (FINALIZADO) {
-        alert('Esse repasse está finalizado. Reabra pra editar.');
+        alert(MSG_BLOQUEIO);
         return;
     }
     log(`→ Aplicando ${minutos} min ao item ${itemId}`);
@@ -524,10 +559,16 @@ function finalizarRepasse() {
         alert('Marque pelo menos uma linha antes de finalizar.');
         return;
     }
-    if (!confirm('Finalizar o repasse? Isso vai travar as edições.')) return;
+    const competencia = document.getElementById('competencia').value;
+    if (!competencia) {
+        alert('Selecione o mês de competência (o mês que está sendo pago).');
+        return;
+    }
+    if (!confirm(`Finalizar o repasse com competência ${competencia.slice(5)}/${competencia.slice(0, 4)}? ` +
+                 'Isso vai travar as edições.')) return;
 
     log('→ Finalizando repasse...');
-    postJSON(`/repasse/${REPASSE_ID}/finalizar/`)
+    postJSON(`/repasse/${REPASSE_ID}/finalizar/`, { competencia })
         .then(data => {
             log('← ' + JSON.stringify(data));
             if (!data.ok) {
@@ -541,10 +582,15 @@ function finalizarRepasse() {
 }
 
 function reabrirRepasse() {
-    if (!confirm('Reabrir o repasse para edição?')) return;
+    const motivo = prompt('Motivo da reabertura (fica registrado na auditoria):');
+    if (motivo === null) return;
+    if (motivo.trim().length < 5) {
+        alert('Informe o motivo da reabertura (mínimo 5 caracteres).');
+        return;
+    }
 
     log('→ Reabrindo repasse...');
-    postJSON(`/repasse/${REPASSE_ID}/reabrir/`)
+    postJSON(`/repasse/${REPASSE_ID}/reabrir/`, { motivo: motivo.trim() })
         .then(data => {
             log('← ' + JSON.stringify(data));
             if (!data.ok) {

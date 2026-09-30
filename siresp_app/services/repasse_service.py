@@ -207,3 +207,97 @@ def arredondar_repasse(repasse, modo):
 
     repasse.recalcular_totais()
     return repasse
+
+def marcar_por_regra(repasse):
+    """
+    Marca as linhas cuja especialidade tem regra cadastrada para o
+    profissional (as especialidades que ele realmente atende) e
+    recalcula os totais. Retorna quantas linhas foram marcadas.
+    """
+    marcadas = repasse.itens.filter(faltou_regra=False).update(marcado=True)
+    repasse.recalcular_totais()
+    return marcadas
+
+
+def criar_repasses_lote(usuario, extracoes):
+    """
+    Cria (ou refaz) o repasse de cada extração, aplicando regras de
+    minutos/valores e marcando as especialidades do profissional.
+
+    - sem repasse  -> cria
+    - rascunho     -> refaz do zero (ajustes manuais são descartados)
+    - finalizado   -> não mexe (precisa reabrir antes)
+
+    Retorna (criados, refeitos, ignorados): repasses gerados agora
+    (criados e refeitos, nesta ordem de lista) e extrações finalizadas puladas.
+    """
+    criados, refeitos, ignorados = [], [], []
+    for ext in extracoes:
+        existente = getattr(ext, 'repasse', None)
+        if existente is not None and existente.status == 'finalizado':
+            ignorados.append(ext)
+            continue
+        repasse = criar_repasse_de_extracao(ext, usuario)
+        marcar_por_regra(repasse)
+        (refeitos if existente is not None else criados).append(repasse)
+    return criados, refeitos, ignorados
+
+
+# =========================================================
+# FINALIZAÇÃO / COMPETÊNCIA
+# =========================================================
+def competencia_padrao(hoje=None):
+    """Mês anterior ao atual (1º dia): o repasse feito em setembro paga agosto."""
+    from datetime import date
+    hoje = hoje or date.today()
+    ano, mes = (hoje.year, hoje.month - 1) if hoje.month > 1 else (hoje.year - 1, 12)
+    return date(ano, mes, 1)
+
+
+def parse_competencia(texto, hoje=None):
+    """
+    Converte 'AAAA-MM' (ou 'MM/AAAA') em date (1º dia do mês).
+    Só aceita meses já fechados: no máximo o mês anterior ao atual.
+    Levanta ValueError com mensagem pronta para o usuário.
+    """
+    from datetime import date, datetime
+    texto = (texto or '').strip()
+    if not texto:
+        raise ValueError('Selecione o mês de competência do repasse.')
+    for fmt in ('%Y-%m', '%m/%Y'):
+        try:
+            d = datetime.strptime(texto, fmt).date().replace(day=1)
+            break
+        except ValueError:
+            continue
+    else:
+        raise ValueError('Mês de competência inválido.')
+
+    limite = competencia_padrao(hoje)
+    if d > limite:
+        raise ValueError(
+            f'O repasse paga um mês já fechado. O último mês permitido é '
+            f'{limite.strftime("%m/%Y")}.'
+        )
+    return d
+
+
+def finalizar_repasse(repasse, competencia):
+    """
+    Finaliza o repasse com a competência informada (date).
+    Retorna (ok, mensagem).
+    """
+    from django.utils import timezone
+
+    if repasse.status == 'finalizado':
+        return False, 'Esse repasse já está finalizado.'
+    if not repasse.itens.filter(marcado=True).exists():
+        return False, 'Marque pelo menos uma linha antes de finalizar.'
+
+    repasse.recalcular_totais()
+    repasse.status = 'finalizado'
+    repasse.finalizado_em = timezone.now()
+    repasse.competencia = competencia
+    repasse.save(update_fields=[
+        'status', 'finalizado_em', 'competencia', 'atualizado_em'])
+    return True, f'Repasse finalizado (competência {competencia.strftime("%m/%Y")}).'

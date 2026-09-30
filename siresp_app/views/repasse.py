@@ -13,7 +13,8 @@ from django.views.decorators.http import require_POST, require_GET
 from django.utils import timezone
 
 from ..models import Extracao, Repasse, ItemRepasse
-from ..services import repasse_service
+from ..services import repasse_service, auditoria
+from ..permissions import admin_required, repasses_visiveis
 
 
 # =========================================================
@@ -21,9 +22,17 @@ from ..services import repasse_service
 # =========================================================
 @login_required
 def abrir_repasse(request, extracao_pk):
-    extracao = get_object_or_404(
-        Extracao, pk=extracao_pk, usuario_web=request.user
-    )
+    extracao = get_object_or_404(Extracao, pk=extracao_pk)
+
+    if extracao.usuario_web_id != request.user.id:
+        # Extração de outro usuário: só consulta. Se já existe repasse, abre; senão, só o dono gera.
+        existente = Repasse.objects.filter(extracao=extracao).first()
+        if existente:
+            return redirect('siresp_app:repasse_ver', pk=existente.pk)
+        messages.warning(
+            request,
+            f'Esta extração é de {extracao.usuario_web.username}; somente ele(a) pode gerar o repasse.')
+        return redirect('siresp_app:producao_ver_extracao', pk=extracao.pk)
 
     repasse = Repasse.objects.filter(
         extracao=extracao, usuario_web=request.user
@@ -31,6 +40,9 @@ def abrir_repasse(request, extracao_pk):
 
     if not repasse:
         repasse = repasse_service.criar_repasse_de_extracao(extracao, request.user)
+        auditoria.registrar(request, 'REPASSE_CRIADO',
+                            f'Repasse criado a partir da extração de {extracao.medico_nome}',
+                            repasse=repasse)
         messages.success(request, 'Repasse criado a partir da extração.')
 
     return redirect('siresp_app:repasse_ver', pk=repasse.pk)
@@ -41,7 +53,7 @@ def abrir_repasse(request, extracao_pk):
 # =========================================================
 @login_required
 def ver_repasse(request, pk):
-    repasse = get_object_or_404(Repasse, pk=pk, usuario_web=request.user)
+    repasse = get_object_or_404(repasses_visiveis(request.user), pk=pk)
     itens = repasse.itens.all()
 
     ambiguos = _listar_ambiguidades(repasse)
@@ -49,6 +61,9 @@ def ver_repasse(request, pk):
     return render(request, 'siresp_app/repasse/home.html', {
         'repasse': repasse,
         'itens': itens,
+        'competencia_padrao': repasse_service.competencia_padrao().strftime('%Y-%m'),
+        'outro_dono': repasse.usuario_web_id != request.user.id,
+        'bloqueado': repasse.finalizado or repasse.usuario_web_id != request.user.id,
         'qtd_ambiguos': len(ambiguos),
         'ambiguos': ambiguos,
     })
@@ -115,6 +130,7 @@ def atualizar_item(request, pk):
     if campo not in ('minutos', 'valor_base', 'bonus_cheio', 'bonus_percent', 'marcado'):
         return JsonResponse({'ok': False, 'mensagem': f'Campo inválido: {campo}'})
 
+    antes = auditoria.snapshot(item.repasse)
     try:
         if campo == 'marcado':
             item.marcado = bool(valor)
@@ -130,6 +146,8 @@ def atualizar_item(request, pk):
 
     except Exception as e:
         return JsonResponse({'ok': False, 'mensagem': str(e)})
+
+    auditoria.registrar_edicao(request, item.repasse, antes)
 
     return JsonResponse({
         'ok': True,
@@ -158,8 +176,12 @@ def marcar_todas(request, pk):
         return JsonResponse({'ok': False, 'mensagem': 'Payload inválido.'})
 
     marcar = bool(data.get('marcar', True))
+    antes = auditoria.snapshot(repasse)
     repasse.itens.update(marcado=marcar)
     repasse.recalcular_totais()
+    auditoria.registrar_edicao(
+        request, repasse, antes,
+        descricao=f'{"Marcar" if marcar else "Desmarcar"} todas as linhas de {repasse.extracao.medico_nome}')
 
     return JsonResponse({
         'ok': True,
@@ -191,7 +213,11 @@ def arredondar(request, pk):
     if modo not in ('baixo', 'cima', 'exato'):
         return JsonResponse({'ok': False, 'mensagem': 'Modo inválido.'})
 
+    antes = auditoria.snapshot(repasse)
     repasse_service.arredondar_repasse(repasse, modo)
+    auditoria.registrar_edicao(
+        request, repasse, antes,
+        descricao=f'Arredondamento ({modo}) em {repasse.extracao.medico_nome}')
 
     return JsonResponse({
         'ok': True,
@@ -214,7 +240,11 @@ def recalcular(request, pk):
             'mensagem': 'Esse repasse está finalizado. Reabra pra editar.',
         })
 
+    antes = auditoria.snapshot(repasse)
     repasse_service.recalcular_repasse(repasse)
+    auditoria.registrar_edicao(
+        request, repasse, antes,
+        descricao=f'Recálculo pelas regras atuais em {repasse.extracao.medico_nome}')
     messages.success(request, 'Repasse recalculado.')
 
     return JsonResponse({
@@ -275,6 +305,7 @@ def escolher_minuto(request, pk):
             'mensagem': 'Nenhuma linha encontrada para essa especialidade.',
         })
 
+    antes = auditoria.snapshot(repasse)
     afetados = 0
     for it in alvo:
         it.minutos = minutos_dec
@@ -283,6 +314,9 @@ def escolher_minuto(request, pk):
         afetados += 1
 
     repasse.recalcular_totais()
+    auditoria.registrar_edicao(
+        request, repasse, antes,
+        descricao=f'Minutos definidos ({minutos_dec:.0f}) em {repasse.extracao.medico_nome}')
 
     return JsonResponse({
         'ok': True,
@@ -314,6 +348,7 @@ def zerar_valores(request, pk):
             'mensagem': 'Esse repasse está finalizado. Reabra pra editar.',
         })
 
+    antes = auditoria.snapshot(repasse)
     for item in repasse.itens.all():
         item.minutos = Decimal('0')
         item.valor_base = Decimal('0')
@@ -321,6 +356,9 @@ def zerar_valores(request, pk):
         item.save()
 
     repasse.recalcular_totais()
+    auditoria.registrar_edicao(
+        request, repasse, antes,
+        descricao=f'Valores zerados em {repasse.extracao.medico_nome}')
 
     return JsonResponse({
         'ok': True,
@@ -337,36 +375,46 @@ def zerar_valores(request, pk):
 def finalizar_repasse(request, pk):
     repasse = get_object_or_404(Repasse, pk=pk, usuario_web=request.user)
 
-    if repasse.status == 'finalizado':
-        return JsonResponse({
-            'ok': False,
-            'mensagem': 'Esse repasse já está finalizado.',
-        })
+    try:
+        data = json.loads(request.body or b'{}')
+    except Exception:
+        data = {}
 
-    marcados = repasse.itens.filter(marcado=True).count()
-    if marcados == 0:
-        return JsonResponse({
-            'ok': False,
-            'mensagem': 'Marque pelo menos uma linha antes de finalizar.',
-        })
+    try:
+        competencia = repasse_service.parse_competencia(data.get('competencia'))
+    except ValueError as e:
+        return JsonResponse({'ok': False, 'mensagem': str(e)})
 
-    repasse.recalcular_totais()
-
-    repasse.status = 'finalizado'
-    repasse.finalizado_em = timezone.now()
-    repasse.save(update_fields=['status', 'finalizado_em', 'atualizado_em'])
-
+    ok, msg = repasse_service.finalizar_repasse(repasse, competencia)
+    if not ok:
+        return JsonResponse({'ok': False, 'mensagem': msg})
+    auditoria.registrar(
+        request, 'REPASSE_FINALIZADO',
+        f'Finalizado com competência {competencia:%m/%Y}: '
+        f'{repasse.horas_total_final} h, R$ {repasse.valor_total_final}',
+        repasse=repasse,
+        detalhes=[{'item': '', 'campo': 'Competência', 'de': '', 'para': f'{competencia:%m/%Y}'},
+                  {'item': '', 'campo': 'Total (final)', 'de': '', 'para': f'{repasse.valor_total_final:.2f}'}])
     return JsonResponse({
         'ok': True,
-        'mensagem': f'Repasse finalizado com {marcados} itens.',
+        'mensagem': msg,
         'repasse': _serializar_repasse(repasse),
     })
 
 
-@login_required
+@admin_required(json=True)
 @require_POST
 def reabrir_repasse(request, pk):
-    repasse = get_object_or_404(Repasse, pk=pk, usuario_web=request.user)
+    """Somente administrador. Exige motivo, que fica registrado na auditoria."""
+    repasse = get_object_or_404(Repasse, pk=pk)
+
+    try:
+        data = json.loads(request.body or b'{}')
+    except Exception:
+        data = {}
+    motivo = str(data.get('motivo', '')).strip()
+    if len(motivo) < 5:
+        return JsonResponse({'ok': False, 'mensagem': 'Informe o motivo da reabertura (mín. 5 caracteres).'})
 
     if repasse.status != 'finalizado':
         return JsonResponse({
@@ -374,9 +422,18 @@ def reabrir_repasse(request, pk):
             'mensagem': 'Esse repasse não está finalizado.',
         })
 
+    competencia = repasse.competencia_fmt
+    valor = repasse.valor_total_final
     repasse.status = 'rascunho'
     repasse.finalizado_em = None
-    repasse.save(update_fields=['status', 'finalizado_em', 'atualizado_em'])
+    repasse.competencia = None
+    repasse.save(update_fields=['status', 'finalizado_em', 'competencia', 'atualizado_em'])
+
+    auditoria.registrar(
+        request, 'REPASSE_REABERTO',
+        f'Reaberto (era competência {competencia}, R$ {valor}). Motivo: {motivo}',
+        repasse=repasse,
+        detalhes=[{'item': '', 'campo': 'Motivo', 'de': '', 'para': motivo}])
 
     return JsonResponse({
         'ok': True,
@@ -393,7 +450,14 @@ def exportar_excel(request, pk):
     from openpyxl import Workbook
     from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
-    repasse = get_object_or_404(Repasse, pk=pk, usuario_web=request.user)
+    repasse = get_object_or_404(repasses_visiveis(request.user), pk=pk)
+
+    if not repasse.finalizado:
+        messages.warning(
+            request,
+            'Finalize o repasse (informando o mês de competência) para gerar o Excel.')
+        return redirect('siresp_app:repasse_ver', pk=pk)
+
     marcados = repasse.itens.filter(marcado=True)
 
     if not marcados.exists():
@@ -412,7 +476,8 @@ def exportar_excel(request, pk):
     ext = repasse.extracao
     ws["A2"] = (
         f"Profissional: {ext.medico_nome}  |  "
-        f"Período: {ext.data_ini} a {ext.data_fim}"
+        f"Período: {ext.data_ini} a {ext.data_fim}  |  "
+        f"Competência: {repasse.competencia_fmt}"
     )
     ws.merge_cells("A2:N2")
     ws["A2"].alignment = Alignment(horizontal="center")
@@ -481,6 +546,9 @@ def exportar_excel(request, pk):
         cell = ws.cell(row=linha, column=c)
         cell.border = Border(top=thin, bottom=thin, left=thin, right=thin)
 
+    auditoria.registrar(request, 'EXPORTACAO',
+                        f'Excel do repasse de {ext.medico_nome} (competência {repasse.competencia_fmt})',
+                        repasse=repasse)
     response = HttpResponse(
         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     )
@@ -524,4 +592,5 @@ def _serializar_repasse(repasse):
         'valor_total_final': float(repasse.valor_total_final),
         'status': repasse.status,
         'finalizado': repasse.status == 'finalizado',
+        'competencia': repasse.competencia_fmt,
     }

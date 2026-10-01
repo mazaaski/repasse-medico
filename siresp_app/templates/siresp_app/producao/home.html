@@ -150,7 +150,7 @@
                         <p class="small text-muted mb-2">
                             Um nome por linha. O sistema busca cada médico no SIRESP e extrai a produção do período.
                         </p>
-                        <textarea id="lote-nomes" class="form-control mb-2" rows="6"
+                        <textarea id="lote-nomes" class="form-control mb-2" rows="6" autocomplete="off" spellcheck="false"
                                   placeholder="NOME COMPLETO DO MÉDICO 1&#10;NOME COMPLETO DO MÉDICO 2"></textarea>
                         <div id="lote-resumo-pend" class="small text-success mb-1"></div>
                         <div class="d-flex flex-wrap gap-2">
@@ -974,6 +974,7 @@ function validarExtracao() {
 // LOTE
 // =========================================================
 let loteEmAndamento = false;
+let loteIniciadoAqui = false;   // a lista de resultados só aparece depois do clique em "Buscar e extrair em lote"
 let intervalLote = null;
 
 function preencherMesAnterior() {
@@ -987,6 +988,11 @@ function preencherMesAnterior() {
     validarExtracao();
 }
 document.getElementById('lote-nomes').addEventListener('input', validarExtracao);
+// O campo não tem memória: nada de nomes de uma extração/planilha anterior ao abrir a tela.
+document.getElementById('lote-nomes').value = '';
+window.addEventListener('pageshow', e => {
+    if (e.persisted) { document.getElementById('lote-nomes').value = ''; validarExtracao(); }
+});
 
 function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -1026,6 +1032,7 @@ function iniciarLote() {
     }).then(data => {
         log('← Lote: ' + JSON.stringify(data));
         if (!data.ok) { alert(data.mensagem); return; }
+        loteIniciadoAqui = true;
         monitorarLote();
     }).catch(e => log('❌ ' + e));
 }
@@ -1066,6 +1073,9 @@ function monitorarLote() {
         .then(r => r.json())
         .then(data => {
             if (!data.existe) { clearInterval(intervalLote); intervalLote = null; return; }
+            // Ao abrir a tela, só retoma um lote que AINDA está rodando; lote antigo (já terminado) não aparece.
+            if (!data.rodando && !loteIniciadoAqui) { clearInterval(intervalLote); intervalLote = null; return; }
+            if (data.rodando) loteIniciadoAqui = true;   // lote retomado em andamento: mostra até o fim
             loteEmAndamento = data.rodando;
             renderLote(data);
             document.getElementById('btn-lote-cancelar').classList.toggle('d-none', !data.rodando);
@@ -1075,7 +1085,7 @@ function monitorarLote() {
     intervalLote = setInterval(tick, 2000);
     tick();
 }
-monitorarLote();  // retoma exibição se já houver lote
+monitorarLote();  // retoma só se houver um lote ainda em andamento
 
 log('Página carregada — modo HEADLESS');
 </script>

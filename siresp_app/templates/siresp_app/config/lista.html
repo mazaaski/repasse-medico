@@ -1,12 +1,11 @@
 {% extends "siresp_app/base.html" %}
 
 {% block title %}Configurações - Grupos{% endblock %}
-
-{% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h2><i class="bi bi-gear"></i> Grupos de Valores</h2>
-    <div>
-        <a href="{% url 'siresp_app:config_especialidades' %}" class="btn btn-outline-secondary">
+{% block icone_pagina %}bi-gear{% endblock %}
+{% block titulo_pagina %}Grupos de Valores{% endblock %}
+{% block subtitulo_pagina %}<p class="page-subtitle">Valor base e bônus por grupo de especialidades.</p>{% endblock %}
+{% block acoes_pagina %}
+<a href="{% url 'siresp_app:config_especialidades' %}" class="btn btn-outline-secondary">
             <i class="bi bi-tags"></i> Especialidades Conhecidas
         </a>
         {% if eh_admin %}
@@ -14,8 +13,9 @@
             <i class="bi bi-plus-lg"></i> Novo Grupo
         </a>
         {% endif %}
-    </div>
-</div>
+{% endblock %}
+
+{% block content %}
 
 {% include "siresp_app/_modo_consulta.html" %}
 <form method="post" action="{% url 'siresp_app:config_excluir_grupos' %}" id="form-grupos">
@@ -31,7 +31,7 @@
     <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return validarExclusaoGrupos();">
         <i class="bi bi-trash"></i> Excluir selecionados
     </button>
-    <button type="submit" name="todos" value="1" class="btn btn-sm btn-danger"
+    <button type="submit" name="todos" value="1" class="btn btn-sm btn-outline-danger"
             onclick="return confirm('Excluir TODOS os {{ grupos|length }} grupos (inclusive o Padrão)? Sem grupo, os valores dos repasses novos ficam zerados. Isso não pode ser desfeito.');">
         <i class="bi bi-trash3"></i> Excluir todos
     </button>
@@ -39,17 +39,17 @@
 {% endif %}
 
 <div class="card">
-    <div class="card-body p-0">
-        <table class="table table-striped table-hover mb-0">
-            <thead class="table-dark">
+    <div class="card-body p-0 table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead>
                 <tr>
                     {% if eh_admin %}<th class="text-center" style="width:40px;"></th>{% endif %}
                     <th>Nome</th>
-                    <th class="text-center">Vlr Base</th>
-                    <th class="text-center">Bônus 100%</th>
-                    <th class="text-center">Vlr/Hora 0%</th>
-                    <th class="text-center">Vlr/Hora 50%</th>
-                    <th class="text-center">Vlr/Hora 100%</th>
+                    <th class="num">Vlr Base</th>
+                    <th class="num">Bônus 100%</th>
+                    <th class="num">Vlr/Hora 0%</th>
+                    <th class="num">Vlr/Hora 50%</th>
+                    <th class="num">Vlr/Hora 100%</th>
                     <th>Especialidades</th>
                     {% if eh_admin %}<th class="text-end">Ações</th>{% endif %}
                 </tr>
@@ -63,17 +63,17 @@
                     <td>
                         <strong>{{ g.nome }}</strong>
                         {% if g.e_padrao %}
-                            <span class="badge bg-info">padrão</span>
+                            <span class="chip chip-azul">padrão</span>
                         {% endif %}
                     </td>
-                    <td class="text-center">R$ {{ g.valor_base|floatformat:2 }}</td>
-                    <td class="text-center">R$ {{ g.bonus|floatformat:2 }}</td>
-                    <td class="text-center text-muted">R$ {{ g.valor_hora_0|floatformat:2 }}</td>
-                    <td class="text-center text-warning-emphasis">R$ {{ g.valor_hora_50|floatformat:2 }}</td>
-                    <td class="text-center text-success fw-bold">R$ {{ g.valor_hora_100|floatformat:2 }}</td>
+                    <td class="num">R$ {{ g.valor_base|floatformat:"2g" }}</td>
+                    <td class="num">R$ {{ g.bonus|floatformat:"2g" }}</td>
+                    <td class="num text-muted">R$ {{ g.valor_hora_0|floatformat:"2g" }}</td>
+                    <td class="num text-warning-emphasis">R$ {{ g.valor_hora_50|floatformat:"2g" }}</td>
+                    <td class="num text-success fw-bold">R$ {{ g.valor_hora_100|floatformat:"2g" }}</td>
                     <td>
                         {% for esp in g.especialidades.all %}
-                            <span class="badge bg-secondary">{{ esp.nome }}</span>
+                            <span class="chip">{{ esp.nome }}</span>
                         {% empty %}
                             <em class="text-muted">(fallback)</em>
                         {% endfor %}

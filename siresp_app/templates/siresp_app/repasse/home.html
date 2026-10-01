@@ -1,72 +1,60 @@
 {% extends "siresp_app/base.html" %}
 
 {% block title %}Repasse - {{ repasse.extracao.medico_nome }}{% endblock %}
+{% block icone_pagina %}bi-cash-coin{% endblock %}
+{% block titulo_pagina %}Repasse · {{ repasse.extracao.medico_nome }}{% endblock %}
+{% block subtitulo_pagina %}<p class="page-subtitle"><strong>CRM</strong> {{ repasse.extracao.medico_crm|default:"—" }} · Período {{ repasse.extracao.data_ini }} a {{ repasse.extracao.data_fim }} · <i class="bi bi-building"></i> {{ repasse.extracao.unidade_nome|default:"unidade não informada" }} · {{ itens|length }} especialidades</p>{% endblock %}
+{% block acoes_pagina %}
+<a href="{% url 'siresp_app:producao_ver_extracao' repasse.extracao.pk %}" class="btn btn-outline-secondary">
+    <i class="bi bi-arrow-left"></i> Extração
+</a>
+
+{% if not bloqueado %}
+<button class="btn btn-outline-secondary" onclick="recalcular()"
+        title="Refaz minutos e valores pelas regras e grupos atuais">
+    <i class="bi bi-arrow-clockwise"></i> Recalcular
+</button>
+{% endif %}
+
+{% if repasse.finalizado %}
+<a href="{% url 'siresp_app:repasse_excel' repasse.pk %}" class="btn btn-success">
+    <i class="bi bi-file-earmark-excel"></i> Exportar Excel
+</a>
+{% else %}
+<button class="btn btn-success" disabled
+        title="Finalize o repasse (com o mês de competência) para liberar o Excel">
+    <i class="bi bi-file-earmark-excel"></i> Exportar Excel
+</button>
+{% endif %}
+
+{% if repasse.status == 'finalizado' %}
+    {% include "siresp_app/_situacao.html" with status="finalizado" %}
+    <span class="small text-muted">em {{ repasse.finalizado_em|date:"d/m/Y H:i" }} · competência {{ repasse.competencia_fmt }}</span>
+    {% if eh_admin %}
+    <button class="btn btn-warning" onclick="reabrirRepasse()">
+        <i class="bi bi-unlock"></i> Reabrir (admin)
+    </button>
+    {% else %}
+    <span class="small text-muted" title="Somente administradores podem reabrir um repasse finalizado">
+        <i class="bi bi-shield-lock"></i> reabrir: só admin</span>
+    {% endif %}
+{% elif outro_dono %}
+    {% include "siresp_app/_situacao.html" with status="rascunho" %}
+    <span class="small text-muted">modo consulta</span>
+{% else %}
+    <div class="input-group" style="width:auto;">
+        <span class="input-group-text" title="Mês que está sendo pago (o repasse é feito no mês seguinte)">
+            Competência</span>
+        <input type="month" id="competencia" class="form-control"
+               value="{{ competencia_padrao }}" max="{{ competencia_padrao }}">
+        <button class="btn btn-primary" onclick="finalizarRepasse()">
+            <i class="bi bi-check-circle"></i> Finalizar Repasse
+        </button>
+    </div>
+{% endif %}
+{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
-    <div>
-        <h2 class="mb-0"><i class="bi bi-cash-coin"></i> Repasse</h2>
-        <small class="text-muted">
-            <strong>{{ repasse.extracao.medico_nome }}</strong>
-            {% if repasse.extracao.medico_crm %} — CRM: {{ repasse.extracao.medico_crm }}{% endif %}
-            | Período: {{ repasse.extracao.data_ini }} a {{ repasse.extracao.data_fim }}
-            | {{ itens|length }} especialidades
-        </small>
-    </div>
-
-    <div class="d-flex gap-2 flex-wrap align-items-center">
-        <a href="{% url 'siresp_app:producao_ver_extracao' repasse.extracao.pk %}"
-           class="btn btn-outline-secondary btn-sm">
-            <i class="bi bi-arrow-left"></i> Voltar
-        </a>
-
-        {% if not bloqueado %}
-            <button class="btn btn-outline-info btn-sm" onclick="recalcular()">
-                <i class="bi bi-arrow-clockwise"></i> Recalcular
-            </button>
-        {% endif %}
-
-        {% if repasse.finalizado %}
-        <a href="{% url 'siresp_app:repasse_excel' repasse.pk %}" class="btn btn-success btn-sm">
-            <i class="bi bi-file-earmark-excel"></i> Exportar Excel
-        </a>
-        {% else %}
-        <button class="btn btn-success btn-sm" disabled
-                title="Finalize o repasse (com o mês de competência) para liberar o Excel">
-            <i class="bi bi-file-earmark-excel"></i> Exportar Excel
-        </button>
-        {% endif %}
-
-        {% if repasse.status == 'finalizado' %}
-            <span class="badge bg-success py-2 px-3">
-                <i class="bi bi-check-circle"></i>
-                FINALIZADO em {{ repasse.finalizado_em|date:"d/m/Y H:i" }}
-                · Competência {{ repasse.competencia_fmt }}
-            </span>
-            {% if eh_admin %}
-            <button class="btn btn-warning btn-sm" onclick="reabrirRepasse()">
-                <i class="bi bi-unlock"></i> Reabrir (admin)
-            </button>
-            {% else %}
-            <span class="small text-muted" title="Somente administradores podem reabrir um repasse finalizado">
-                <i class="bi bi-shield-lock"></i> reabrir: só admin</span>
-            {% endif %}
-        {% elif outro_dono %}
-            <span class="badge bg-warning text-dark py-2 px-3">RASCUNHO · modo consulta</span>
-        {% else %}
-            <div class="input-group input-group-sm" style="width:auto;">
-                <span class="input-group-text" title="Mês que está sendo pago (o repasse é feito no mês seguinte)">
-                    Competência</span>
-                <input type="month" id="competencia" class="form-control"
-                       value="{{ competencia_padrao }}" max="{{ competencia_padrao }}">
-                <button class="btn btn-primary" onclick="finalizarRepasse()">
-                    <i class="bi bi-check-circle"></i> Finalizar Repasse
-                </button>
-            </div>
-        {% endif %}
-    </div>
-</div>
-
 {% if outro_dono %}
 <div class="alert alert-secondary">
     <i class="bi bi-eye"></i> <strong>Modo consulta:</strong> este repasse pertence a
@@ -128,13 +116,13 @@
                 <i class="bi bi-square"></i> Desmarcar todas
             </button>
             <div class="vr"></div>
-            <button class="btn btn-sm btn-outline-warning" onclick="arredondar('baixo')">
+            <button class="btn btn-sm btn-outline-secondary" onclick="arredondar('baixo')">
                 <i class="bi bi-arrow-down"></i> Arred. p/ baixo
             </button>
-            <button class="btn btn-sm btn-outline-warning" onclick="arredondar('cima')">
+            <button class="btn btn-sm btn-outline-secondary" onclick="arredondar('cima')">
                 <i class="bi bi-arrow-up"></i> Arred. p/ cima
             </button>
-            <button class="btn btn-sm btn-outline-warning" onclick="arredondar('exato')">
+            <button class="btn btn-sm btn-outline-secondary" onclick="arredondar('exato')">
                 <i class="bi bi-arrow-repeat"></i> Restaurar exatas
             </button>
             <div class="vr"></div>
@@ -148,8 +136,8 @@
 <!-- Tabela do repasse -->
 <div class="card mb-3">
     <div class="card-body p-0" style="overflow-x: auto;">
-        <table class="table table-sm table-striped table-hover mb-0" id="tabela-repasse">
-            <thead class="table-dark">
+        <table class="table table-sm table-hover align-middle mb-0" id="tabela-repasse">
+            <thead>
                 <tr>
                     <th class="text-center" style="width: 40px;">✔</th>
                     <th style="min-width: 220px;">Especialidade</th>
@@ -180,7 +168,7 @@
                     <td>
                         <strong>{{ item.especialidade }}</strong>
                         {% if item.faltou_regra %}
-                            <span class="badge bg-warning text-dark" title="Sem regra de minutos. Usando padrão 15.">!</span>
+                            <span class="chip chip-ambar" title="Sem regra de minutos. Usando padrão 15.">!</span>
                         {% endif %}
                         <br><small class="text-muted">{{ item.grupo_nome }}</small>
                     </td>
@@ -199,7 +187,7 @@
                               data-id="{{ item.id }}"
                               style="cursor: pointer; text-decoration: underline dotted;"
                               title="Clique para editar">
-                            R$ {{ item.valor_base|floatformat:2 }}
+                            R$ {{ item.valor_base|floatformat:"2g" }}
                         </span>
                     </td>
                     <td class="text-center">
@@ -207,7 +195,7 @@
                               data-id="{{ item.id }}"
                               style="cursor: pointer; text-decoration: underline dotted;"
                               title="Clique para editar">
-                            R$ {{ item.bonus_cheio|floatformat:2 }}
+                            R$ {{ item.bonus_cheio|floatformat:"2g" }}
                         </span>
                     </td>
                     <td class="text-center">
@@ -219,14 +207,14 @@
                             <option value="100%" {% if item.bonus_percent == '100%' %}selected{% endif %}>100%</option>
                         </select>
                     </td>
-                    <td class="text-center fw-bold">R$ {{ item.valor_hora|floatformat:2 }}</td>
-                    <td class="text-center">{{ item.horas_real|floatformat:2 }}</td>
-                    <td class="text-center">{{ item.horas_final|floatformat:2 }}</td>
+                    <td class="text-center fw-bold">R$ {{ item.valor_hora|floatformat:"2g" }}</td>
+                    <td class="text-center">{{ item.horas_real|floatformat:"2g" }}</td>
+                    <td class="text-center">{{ item.horas_final|floatformat:"2g" }}</td>
                     <td class="text-center">
-                        {% if item.marcado %}R$ {{ item.total_real|floatformat:2 }}{% endif %}
+                        {% if item.marcado %}R$ {{ item.total_real|floatformat:"2g" }}{% endif %}
                     </td>
                     <td class="text-center fw-bold text-success">
-                        {% if item.marcado %}R$ {{ item.total_final|floatformat:2 }}{% endif %}
+                        {% if item.marcado %}R$ {{ item.total_final|floatformat:"2g" }}{% endif %}
                     </td>
                 </tr>
                 {% empty %}
@@ -242,44 +230,32 @@
 </div>
 
 <!-- Rodapé de totais -->
-<div class="card">
-    <div class="card-body py-2">
-        <div class="row">
+<div class="card barra-totais">
+    <div class="card-body py-3">
+        <div class="row g-3 align-items-center">
             <div class="col-md-6">
-                <h5 class="mb-0">
-                    <i class="bi bi-clock"></i>
-                    TOTAL HORAS:
-                    <span id="total-horas-real" class="text-primary">{{ repasse.horas_total_real|floatformat:2 }}</span> h (Real)
-                    <span class="text-muted">|</span>
-                    <span id="total-horas-final" class="text-primary">{{ repasse.horas_total_final|floatformat:2 }}</span> h (Final)
-                </h5>
+                <div class="kpi-label">Total de horas</div>
+                <div class="kpi-valor"><span id="total-horas-final">{{ repasse.horas_total_final|floatformat:"2g" }}</span> h
+                    <span class="kpi-sub">final · <span id="total-horas-real">{{ repasse.horas_total_real|floatformat:"2g" }}</span> h real</span></div>
             </div>
-            <div class="col-md-6 text-end">
-                <h5 class="mb-0">
-                    <i class="bi bi-cash-stack"></i>
-                    TOTAL GERAL:
-                    <span id="total-real" class="text-muted">R$ {{ repasse.valor_total_real|floatformat:2 }}</span>
-                    <span class="text-muted">|</span>
-                    <span id="total-final" class="text-success fw-bold">R$ {{ repasse.valor_total_final|floatformat:2 }}</span>
-                </h5>
+            <div class="col-md-6 text-md-end">
+                <div class="kpi-label">Total do repasse</div>
+                <div class="kpi-valor text-success" id="total-final">R$ {{ repasse.valor_total_final|floatformat:"2g" }}</div>
+                <div class="kpi-sub">valor real: <span id="total-real">R$ {{ repasse.valor_total_real|floatformat:"2g" }}</span></div>
             </div>
         </div>
     </div>
 </div>
 
 <!-- Log -->
-<div class="card mt-3">
-    <div class="card-header d-flex justify-content-between">
-        <span><i class="bi bi-terminal"></i> Log</span>
-        <button class="btn btn-sm btn-outline-secondary"
-                onclick="document.getElementById('log-debug').textContent = 'Log limpo.';">
-            Limpar
-        </button>
+<details class="mt-3">
+    <summary class="small text-muted"><i class="bi bi-terminal"></i> Log técnico</summary>
+    <div class="mt-2">
+        <button class="btn btn-sm btn-outline-secondary mb-1"
+                onclick="document.getElementById('log-debug').textContent = 'Log limpo.';">Limpar</button>
+        <pre id="log-debug" style="max-height: 150px; overflow-y: auto; font-size: 11px; margin: 0; background: #fff; border: 1px solid var(--app-border); padding: 8px; border-radius: 4px;">Aguardando ações...</pre>
     </div>
-    <div class="card-body p-2">
-        <pre id="log-debug" style="max-height: 150px; overflow-y: auto; font-size: 11px; margin: 0; background: #f8f9fa; padding: 8px; border-radius: 4px;">Aguardando ações...</pre>
-    </div>
-</div>
+</details>
 {% endblock %}
 
 {% block extra_js %}
@@ -290,6 +266,10 @@
 const REPASSE_ID = {{ repasse.pk }};
 const FINALIZADO = {% if bloqueado %}true{% else %}false{% endif %};
 const MSG_BLOQUEIO = {% if outro_dono %}'Este repasse pertence a outro usuário (modo consulta).'{% else %}'Esse repasse está finalizado. Reabra pra editar.'{% endif %};
+
+function fmtBR(n) {
+    return Number(n).toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+}
 
 // =========================================================
 // LOG
@@ -361,17 +341,17 @@ function atualizarLinha(item) {
     if (!tr) return;
 
     tr.querySelector('.valor-minutos').textContent = Math.round(item.minutos);
-    tr.querySelector('.valor-base').textContent = 'R$ ' + item.valor_base.toFixed(2).replace('.', ',');
-    tr.querySelector('.valor-bonus').textContent = 'R$ ' + item.bonus_cheio.toFixed(2).replace('.', ',');
+    tr.querySelector('.valor-base').textContent = 'R$ ' + fmtBR(item.valor_base);
+    tr.querySelector('.valor-bonus').textContent = 'R$ ' + fmtBR(item.bonus_cheio);
 
     const tds = tr.querySelectorAll('td');
-    tds[8].textContent = 'R$ ' + item.valor_hora.toFixed(2).replace('.', ',');
-    tds[9].textContent = item.horas_real.toFixed(2).replace('.', ',');
-    tds[10].textContent = item.horas_final.toFixed(2).replace('.', ',');
+    tds[8].textContent = 'R$ ' + fmtBR(item.valor_hora);
+    tds[9].textContent = fmtBR(item.horas_real);
+    tds[10].textContent = fmtBR(item.horas_final);
 
     if (item.marcado) {
-        tds[11].textContent = 'R$ ' + item.total_real.toFixed(2).replace('.', ',');
-        tds[12].textContent = 'R$ ' + item.total_final.toFixed(2).replace('.', ',');
+        tds[11].textContent = 'R$ ' + fmtBR(item.total_real);
+        tds[12].textContent = 'R$ ' + fmtBR(item.total_final);
         tr.classList.add('table-active');
     } else {
         tds[11].textContent = '';
@@ -390,10 +370,10 @@ function atualizarLinha(item) {
 }
 
 function atualizarTotais(rep) {
-    document.getElementById('total-horas-real').textContent = rep.horas_total_real.toFixed(2).replace('.', ',');
-    document.getElementById('total-horas-final').textContent = rep.horas_total_final.toFixed(2).replace('.', ',');
-    document.getElementById('total-real').textContent = 'R$ ' + rep.valor_total_real.toFixed(2).replace('.', ',');
-    document.getElementById('total-final').textContent = 'R$ ' + rep.valor_total_final.toFixed(2).replace('.', ',');
+    document.getElementById('total-horas-real').textContent = fmtBR(rep.horas_total_real);
+    document.getElementById('total-horas-final').textContent = fmtBR(rep.horas_total_final);
+    document.getElementById('total-real').textContent = 'R$ ' + fmtBR(rep.valor_total_real);
+    document.getElementById('total-final').textContent = 'R$ ' + fmtBR(rep.valor_total_final);
 }
 
 // =========================================================

@@ -1,48 +1,33 @@
 {% extends "siresp_app/base.html" %}
 
 {% block title %}Resultado da Extração{% endblock %}
+{% block icone_pagina %}bi-table{% endblock %}
+{% block titulo_pagina %}Resultado da Extração{% endblock %}
+{% block subtitulo_pagina %}<p class="page-subtitle"><strong>{{ extracao.medico_nome }}</strong>{% if extracao.medico_crm %} · CRM {{ extracao.medico_crm }}{% endif %} · Período {{ extracao.data_ini }} a {{ extracao.data_fim }} · <i class="bi bi-building"></i> {{ extracao.unidade_nome|default:"unidade não informada" }} · Extraído em {{ extracao.criada_em|date:"d/m/Y H:i" }}</p>{% endblock %}
+{% block acoes_pagina %}
+<a href="{% url 'siresp_app:producao_historico' %}" class="btn btn-outline-secondary">
+    <i class="bi bi-arrow-left"></i> Histórico
+</a>
+<a href="{% url 'siresp_app:producao_exportar_csv' extracao.pk %}" class="btn btn-outline-secondary">
+    <i class="bi bi-filetype-csv"></i> CSV
+</a>
+<a href="{% url 'siresp_app:producao_exportar_json' extracao.pk %}" class="btn btn-outline-secondary">
+    <i class="bi bi-filetype-json"></i> JSON
+</a>
+{% if not outro_dono %}
+<a href="{% url 'siresp_app:producao_ir_repasse' extracao.pk %}" class="btn btn-primary">
+    <i class="bi bi-cash-coin"></i> Usar no Repasse
+</a>
+{% elif repasse %}
+<a href="{% url 'siresp_app:repasse_ver' repasse.pk %}" class="btn btn-primary">
+    <i class="bi bi-cash-coin"></i> Ver repasse
+</a>
+{% endif %}
+{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <div>
-        <h2 class="mb-0"><i class="bi bi-table"></i> Resultado da Extração</h2>
-        <small class="text-muted">
-            <strong>{{ extracao.medico_nome }}</strong>
-            {% if extracao.medico_crm %} — CRM: {{ extracao.medico_crm }}{% endif %}
-            | Período: {{ extracao.data_ini }} a {{ extracao.data_fim }}
-            | Extraído em {{ extracao.criada_em|date:"d/m/Y H:i" }}
-        </small>
-    </div>
-    <div class="d-flex gap-2">
-        <a href="{% url 'siresp_app:producao_home' %}" class="btn btn-outline-secondary">
-            <i class="bi bi-arrow-left"></i> Voltar
-        </a>
-        <a href="{% url 'siresp_app:producao_historico' %}" class="btn btn-outline-primary">
-            <i class="bi bi-clock-history"></i> Histórico
-        </a>
-        <a href="{% url 'siresp_app:producao_exportar_csv' extracao.pk %}"
-           class="btn btn-success">
-            <i class="bi bi-filetype-csv"></i> CSV
-        </a>
-        <a href="{% url 'siresp_app:producao_exportar_json' extracao.pk %}"
-           class="btn btn-info">
-            <i class="bi bi-filetype-json"></i> JSON
-        </a>
-        {% if not outro_dono %}
-        <a href="{% url 'siresp_app:producao_ir_repasse' extracao.pk %}"
-           class="btn btn-warning">
-            <i class="bi bi-cash-coin"></i> Usar no Repasse
-        </a>
-        {% elif repasse %}
-        <a href="{% url 'siresp_app:repasse_ver' repasse.pk %}" class="btn btn-warning">
-            <i class="bi bi-cash-coin"></i> Ver repasse
-        </a>
-        {% endif %}
-    </div>
-</div>
-
 {% if outro_dono %}
-<div class="alert alert-secondary py-2 small">
+<div class="dica dica-neutra">
     <i class="bi bi-eye"></i> <strong>Modo consulta:</strong> extração feita por
     <strong>{{ extracao.usuario_web.username }}</strong>. Você vê os mesmos dados, mas só ele(a) gera o repasse a partir dela.
 </div>
@@ -53,11 +38,11 @@
         <strong>{{ linhas|length }}</strong> especialidades extraídas
     </div>
     <div class="card-body p-0" style="overflow-x: auto;">
-        <table class="table table-sm table-striped table-hover mb-0">
-            <thead class="table-dark">
+        <table class="table table-sm table-hover align-middle mb-0">
+            <thead>
                 <tr>
                     {% for col in colunas %}
-                    <th class="text-center small">{{ col }}</th>
+                    <th class="small {% if not forloop.first %}num{% endif %}">{{ col }}</th>
                     {% endfor %}
                 </tr>
             </thead>
@@ -65,7 +50,7 @@
                 {% for linha in linhas %}
                 <tr>
                     {% for valor in linha %}
-                    <td class="small text-center">{{ valor }}</td>
+                    <td class="small {% if forloop.first %}fw-semibold{% else %}num{% endif %}">{{ valor }}</td>
                     {% endfor %}
                 </tr>
                 {% empty %}

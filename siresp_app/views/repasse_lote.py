@@ -3,7 +3,7 @@ Repasse em lote: cria os repasses de várias extrações de uma vez, aplicando
 regras de minutos/valores e marcando as especialidades de cada profissional,
 e mostra um relatório consolidado.
 """
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 from django.contrib import messages
@@ -15,7 +15,7 @@ from django.views.decorators.http import require_POST
 
 from ..models import Extracao, Repasse
 from ..services import repasse_service, auditoria
-from ..services.resumo_service import linhas_resumo, anexar_resumo_planilha
+from ..services.resumo_service import linhas_resumo, anexar_resumo_planilha, texto_unidades
 from ..services.profissionais_service import extracoes_do_mes, agrupar_por_equipe
 from .repasse import _listar_ambiguidades
 
@@ -168,6 +168,61 @@ def lote_finalizar(request):
                     + ','.join(str(r.pk) for r in alvo))
 
 
+@login_required
+@require_POST
+def lote_apagar(request):
+    """
+    Apaga em lote os repasses em RASCUNHO das extrações marcadas.
+    - Repasses finalizados nunca são apagados (um administrador precisa reabri-los antes).
+    - A extração continua: dá para gerar o repasse de novo.
+    - Cada repasse apagado fica registrado na auditoria.
+    """
+    try:
+        mes, ano = int(request.POST.get('mes', 0)), int(request.POST.get('ano', 0))
+        date(ano, mes, 1)
+        destino = reverse('siresp_app:repasse_lote') + f'?mes={mes}&ano={ano}'
+    except ValueError:
+        destino = reverse('siresp_app:repasse_lote')
+
+    try:
+        ids = [int(i) for i in request.POST.getlist('extracao_ids')]
+    except ValueError:
+        messages.error(request, 'IDs inválidos.')
+        return redirect(destino)
+    if not ids:
+        messages.warning(request, 'Selecione pelo menos um repasse.')
+        return redirect(destino)
+
+    repasses = list(Repasse.objects.filter(extracao_id__in=ids, usuario_web=request.user)
+                    .select_related('extracao'))
+    apagados, protegidos = 0, []
+    for r in repasses:
+        if r.finalizado:
+            protegidos.append(r.extracao.medico_nome)
+            continue
+        auditoria.registrar(
+            request, 'REPASSE_APAGADO',
+            f'Repasse apagado em lote: {r.extracao.medico_nome} '
+            f'({r.itens.filter(marcado=True).count()} linha(s) marcada(s), '
+            f'{r.horas_total_final} h, R$ {r.valor_total_final})',
+            repasse=r)
+        r.delete()
+        apagados += 1
+
+    if apagados:
+        messages.success(
+            request,
+            f'{apagados} repasse(s) apagado(s). As extrações continuam: você pode gerar de novo.')
+    if protegidos:
+        messages.warning(
+            request,
+            f'{len(protegidos)} finalizado(s) não foi(foram) apagado(s) (um administrador precisa '
+            'reabri-los antes): ' + ', '.join(protegidos))
+    if not apagados and not protegidos:
+        messages.info(request, 'Nenhum dos selecionados tinha repasse para apagar.')
+    return redirect(destino)
+
+
 def _montar_relatorio(request):
     """Lê ?ids=1,2,3 e monta um bloco por profissional."""
     if request.GET.get('mes') and request.GET.get('ano'):
@@ -236,6 +291,7 @@ def lote_relatorio(request):
     return render(request, 'siresp_app/repasse/lote_relatorio.html', {
         'blocos': blocos,
         'grupos': _grupos(blocos),
+        'unidades_txt': texto_unidades(b['extracao'].unidade_nome for b in blocos),
         'resumo': _resumo(_grupos(blocos)),
         'tot_horas': tot_horas,
         'tot_valor': tot_valor,
@@ -289,9 +345,10 @@ def lote_relatorio_pdf(request):
     } for g in grupos]
 
     competencias = sorted({b['repasse'].competencia_fmt for b in blocos if b['repasse'].competencia})
+    unidades_txt = texto_unidades(b['extracao'].unidade_nome for b in blocos)
     pdf = gerar_pdf(
         'Relatório de Repasse Médico',
-        'Competência: ' + (', '.join(competencias) or '-')
+        unidades_txt + ' | Competência: ' + (', '.join(competencias) or '-')
         + f' | {len(blocos)} profissional(is)',
         grupos_pdf, _resumo(grupos), tot_horas, tot_valor)
     auditoria.registrar(request, 'EXPORTACAO',
@@ -319,9 +376,17 @@ def lote_relatorio_excel(request):
     wb = Workbook()
     ws = wb.active
     ws.title = "Resumo do Lote"
+    competencias = sorted({b['repasse'].competencia_fmt for b in blocos if b['repasse'].competencia})
+    ws.append(["Relatório de Repasse Médico"])
+    ws["A1"].font = Font(bold=True, size=14)
+    ws.append([texto_unidades(b['extracao'].unidade_nome for b in blocos)
+               + "  |  Competência: " + (", ".join(competencias) or "-")
+               + "  |  Gerado em: " + datetime.now().strftime("%d/%m/%Y %H:%M")])
+    ws["A2"].font = Font(bold=True)
+    ws.append([])
     ws.append(["Equipe", "Profissional", "Período", "Especialidade", "Minutos",
-               "Horas", "Valor/Hora (R$)", "Total (R$)", "Situação", "Competência"])
-    for c in ws[1]:
+               "Horas", "Valor/Hora (R$)", "Total (R$)", "Situação", "Competência", "Unidade"])
+    for c in ws[4]:
         c.font = Font(bold=True)
 
     def negrito():
@@ -337,10 +402,10 @@ def lote_relatorio_excel(request):
             for i in b['aplicadas']:
                 ws.append([equipe, ext.medico_nome, periodo, i.especialidade, float(i.minutos),
                            float(i.horas_final), float(i.valor_hora), float(i.total_final),
-                           'Aplicada', comp])
+                           'Aplicada', comp, ext.unidade_nome])
             for i in b['sem_regra']:
                 ws.append([equipe, ext.medico_nome, periodo, i.especialidade, '', '', '', '',
-                           'Sem regra (não aplicada)', comp])
+                           'Sem regra (não aplicada)', comp, ext.unidade_nome])
             ws.append([equipe, f"Subtotal {ext.medico_nome}", '', '', '',
                        float(b['horas']), '', float(b['valor']), '', ''])
             negrito()
@@ -354,7 +419,7 @@ def lote_relatorio_excel(request):
     negrito()
     for col, w in zip("ABCDEFGHIJ", (34, 38, 24, 45, 9, 10, 15, 15, 26, 13)):
         ws.column_dimensions[col].width = w
-    for row in ws.iter_rows(min_row=2):
+    for row in ws.iter_rows(min_row=5):
         row[6].number_format = 'R$ #,##0.00'
         row[7].number_format = 'R$ #,##0.00'
 

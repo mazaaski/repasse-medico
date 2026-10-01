@@ -1,22 +1,19 @@
 {% extends "siresp_app/base.html" %}
 
 {% block title %}Repasse em Lote{% endblock %}
+{% block icone_pagina %}bi-cash-stack{% endblock %}
+{% block titulo_pagina %}Repasse em Lote{% endblock %}
+{% block subtitulo_pagina %}<p class="page-subtitle">Gere, confira e finalize os repasses do mês.</p>{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h2><i class="bi bi-cash-stack"></i> Repasse em Lote</h2>
+
+<div class="dica">
+    Selecione as extrações do mês e gere os repasses: as <strong>regras de minutos</strong> e os
+    <strong>grupos de valores</strong> são aplicados e as especialidades do profissional já vêm marcadas.
+    Rascunhos podem ser refeitos; repasses finalizados ficam protegidos.
 </div>
 
-<div class="alert alert-info small">
-    Selecione as extrações do mês. Para cada uma o sistema cria o repasse aplicando as regras de
-    minutos e os grupos de valores, e <strong>já marca as especialidades</strong> que o profissional
-    tem cadastradas nas regras. Ao final você vê um relatório com horas e valores.
-    Nada é finalizado automaticamente: os repasses ficam em rascunho para conferência.
-    Rascunhos podem ser <strong>refeitos</strong> a qualquer momento (útil depois de ajustar regras ou grupos);
-    repasses finalizados ficam protegidos.
-</div>
-
-<form method="get" class="row g-2 mb-3">
+<form method="get" class="toolbar">
     <div class="col-auto">
         <select name="mes" class="form-select">
             {% for n, nome in meses %}
@@ -36,6 +33,8 @@
 
 <form method="post" action="{% url 'siresp_app:repasse_lote_gerar' %}">
     {% csrf_token %}
+    <input type="hidden" name="mes" value="{{ mes }}">
+    <input type="hidden" name="ano" value="{{ ano }}">
     <div class="card">
         <div class="card-header d-flex justify-content-between align-items-center">
             <div>
@@ -50,12 +49,20 @@
                 <span class="ms-2"><strong id="qtd">0</strong> selecionadas</span>
             </div>
             <div class="d-flex flex-wrap gap-2 align-items-center">
-                <button class="btn btn-success" onclick="return validar();">
+                <button class="btn btn-sm btn-primary" onclick="return validar();">
                     <i class="bi bi-play-fill"></i> Gerar repasses selecionados
                 </button>
+                {% if rascunhos %}
+                <button class="btn btn-sm btn-outline-danger"
+                        formaction="{% url 'siresp_app:repasse_lote_apagar' %}"
+                        onclick="return confirmarApagar();"
+                        title="Apaga os repasses em rascunho marcados (as extrações continuam)">
+                    <i class="bi bi-trash"></i> Apagar repasses selecionados
+                </button>
+                {% endif %}
                 {% if ids_mes %}
                 <a href="{% url 'siresp_app:repasse_lote_relatorio' %}?mes={{ mes }}&ano={{ ano }}"
-                   class="btn btn-outline-primary">
+                   class="btn btn-sm btn-outline-primary">
                     <i class="bi bi-clipboard-data"></i> Relatório e edição do mês
                 </a>
                 {% endif %}
@@ -63,7 +70,7 @@
         </div>
         <div class="table-responsive">
             <table class="table table-sm table-hover align-middle mb-0">
-                <thead class="table-light">
+                <thead>
                     <tr><th style="width:40px;"></th><th>Profissional</th><th>Período</th>
                         <th>Itens</th><th>Repasse</th></tr>
                 </thead>
@@ -81,11 +88,10 @@
                         <td>
                             {% if l.repasse %}
                                 <a href="{% url 'siresp_app:repasse_ver' l.repasse.pk %}">
-                                    {% if l.repasse.finalizado %}<span class="badge bg-success">Finalizado</span>
-                                    {% else %}<span class="badge bg-warning text-dark">Rascunho</span>{% endif %}
+                                    {% if l.repasse.finalizado %}{% include "siresp_app/_situacao.html" with status="finalizado" %}{% else %}{% include "siresp_app/_situacao.html" with status="rascunho" %}{% endif %}
                                 </a>
                             {% else %}
-                                <span class="badge bg-secondary">Sem repasse</span>
+                                {% include "siresp_app/_situacao.html" with status="pendente" %}
                             {% endif %}
                         </td>
                     </tr>
@@ -114,6 +120,15 @@ function marcar(modo) {
             (modo === 'rascunho' && c.classList.contains('rascunho'));
     });
     contar();
+}
+function confirmarApagar() {
+    const n = document.querySelectorAll('.chk.rascunho:checked').length;
+    if (!n) {
+        alert('Marque pelo menos um repasse em rascunho para apagar.');
+        return false;
+    }
+    return confirm(`Apagar ${n} repasse(s) em rascunho? Os ajustes feitos neles serão perdidos. ` +
+                   'As extrações continuam e você pode gerar os repasses de novo. Repasses finalizados não são apagados.');
 }
 function validar() {
     if (!document.querySelectorAll('.chk:checked').length) {

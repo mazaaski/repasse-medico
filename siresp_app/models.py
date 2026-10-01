@@ -128,6 +128,9 @@ class ConfiguracaoLogin(models.Model):
     rg_primeiros = models.CharField(max_length=10, blank=True)
     rg_ultimos = models.CharField(max_length=10, blank=True)
     origem = models.CharField(max_length=10, blank=True, default='CRM')
+    # Unidade do SIRESP lembrada (valor do radio, ex.: "2206_AME SAO JOSE DO RIO PRETO").
+    # Quando preenchida e presente na lista, o login a escolhe sozinho.
+    unidade_preferida = models.CharField(max_length=200, blank=True)
 
     atualizado_em = models.DateTimeField(auto_now=True)
 
@@ -226,6 +229,10 @@ class Extracao(models.Model):
 
     data_ini = models.CharField(max_length=10)
     data_fim = models.CharField(max_length=10)
+
+    # Unidade do SIRESP com a qual o usuário estava logado ao extrair (relatório em nome dela)
+    unidade_nome = models.CharField(max_length=200, blank=True)
+    unidade_codigo = models.CharField(max_length=50, blank=True)
 
     criada_em = models.DateTimeField(auto_now_add=True)
 

@@ -1,12 +1,12 @@
 {% extends "siresp_app/base.html" %}
 
 {% block title %}Editar Regra{% endblock %}
+{% block icone_pagina %}bi-pencil{% endblock %}
+{% block titulo_pagina %}Editar Regra{% endblock %}
+{% block subtitulo_pagina %}<p class="page-subtitle">Minutos de consulta e valores específicos para este profissional e especialidade.</p>{% endblock %}
 
 {% block content %}
-<div class="row justify-content-center">
-    <div class="col-lg-7">
-        <h2 class="mb-3"><i class="bi bi-pencil"></i> Editar Regra</h2>
-
+<div class="form-card">
         <form method="post" class="card">
             {% csrf_token %}
             <div class="card-body">
@@ -42,10 +42,9 @@
                 </div>
             </div>
             <div class="card-footer text-end">
-                <a href="{% url 'siresp_app:config_regras' %}" class="btn btn-secondary">Cancelar</a>
+                <a href="{% url 'siresp_app:config_regras' %}" class="btn btn-outline-secondary">Cancelar</a>
                 <button type="submit" class="btn btn-primary">Salvar</button>
             </div>
         </form>
-    </div>
 </div>
 {% endblock %}

@@ -1,14 +1,16 @@
 {% extends "siresp_app/base.html" %}
 
 {% block title %}Histórico de Extrações{% endblock %}
-
-{% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h2><i class="bi bi-clock-history"></i> Histórico de Extrações</h2>
-    <a href="{% url 'siresp_app:producao_home' %}" class="btn btn-outline-secondary">
+{% block icone_pagina %}bi-clock-history{% endblock %}
+{% block titulo_pagina %}Histórico de Extrações{% endblock %}
+{% block subtitulo_pagina %}<p class="page-subtitle">Extrações feitas no SIRESP por todos os usuários.</p>{% endblock %}
+{% block acoes_pagina %}
+<a href="{% url 'siresp_app:producao_home' %}" class="btn btn-outline-secondary">
         <i class="bi bi-arrow-left"></i> Voltar
     </a>
-</div>
+{% endblock %}
+
+{% block content %}
 
 <form method="post" action="{% url 'siresp_app:producao_excluir_varias' %}" id="form-excluir">
     {% csrf_token %}
@@ -29,20 +31,21 @@
                 </span>
             </div>
             <div>
-                <button type="submit" class="btn btn-outline-danger"
+                <button type="submit" class="btn btn-sm btn-outline-danger"
                         onclick="return validarExclusao();">
                     <i class="bi bi-trash"></i> Excluir Selecionadas
                 </button>
             </div>
         </div>
         <div class="card-body p-0" style="overflow-x: auto;">
-            <table class="table table-striped table-hover mb-0">
-                <thead class="table-dark">
+            <table class="table table-hover align-middle mb-0">
+                <thead>
                     <tr>
                         <th class="text-center" style="width: 40px;">✔</th>
                         <th>Data</th>
                         <th>Usuário</th>
                         <th>Médico</th>
+                        <th>Unidade</th>
                         <th>CRM</th>
                         <th>Código</th>
                         <th>Período</th>
@@ -60,31 +63,20 @@
                                    class="form-check-input chk-extracao">{% else %}<i class="bi bi-eye text-muted" title="Extração de outro usuário (consulta)"></i>{% endif %}
                         </td>
                         <td class="small">{{ e.criada_em|date:"d/m/Y H:i" }}</td>
-                        <td class="small">{{ e.usuario_web.username }}{% if linha.dono %} <span class="badge bg-light text-dark border">você</span>{% endif %}</td>
+                        <td class="small">{{ e.usuario_web.username }}{% if linha.dono %} <span class="chip">você</span>{% endif %}</td>
                         <td><strong>{{ e.medico_nome }}</strong></td>
+                        <td class="small">{{ e.unidade_nome|default:"—" }}</td>
                         <td class="small">{{ e.medico_crm|default:"-" }}</td>
                         <td class="small">{{ e.medico_codigo|default:"-" }}</td>
                         <td class="small">{{ e.data_ini }} a {{ e.data_fim }}</td>
                         <td class="text-center">
-                            <span class="badge bg-primary">{{ e.total_itens }}</span>
+                            <span class="badge rounded-pill bg-secondary-subtle text-secondary-emphasis">{{ e.total_itens }}</span>
                         </td>
                         <td class="text-center">
                             {% if r.existe %}
-                                {% if r.finalizado %}
-                                    <span class="badge bg-success"
-                                          title="Repasse finalizado em {{ r.pk }}">
-                                        <i class="bi bi-lock-fill"></i> FINALIZADO
-                                    </span>
-                                {% else %}
-                                    <span class="badge bg-warning text-dark"
-                                          title="Repasse em rascunho">
-                                        <i class="bi bi-pencil"></i> RASCUNHO
-                                    </span>
-                                {% endif %}
+                                {% if r.finalizado %}{% include "siresp_app/_situacao.html" with status="finalizado" %}{% else %}{% include "siresp_app/_situacao.html" with status="rascunho" %}{% endif %}
                             {% else %}
-                                <span class="badge bg-secondary">
-                                    <i class="bi bi-dash-circle"></i> SEM
-                                </span>
+                                {% include "siresp_app/_situacao.html" with status="pendente" %}
                             {% endif %}
                         </td>
                         <td class="text-center">
@@ -93,16 +85,16 @@
                                 <i class="bi bi-eye"></i>
                             </a>
                             <a href="{% url 'siresp_app:producao_exportar_csv' e.pk %}"
-                               class="btn btn-sm btn-outline-success" title="CSV">
+                               class="btn btn-sm btn-outline-secondary" title="CSV">
                                 <i class="bi bi-filetype-csv"></i>
                             </a>
                             <a href="{% url 'siresp_app:producao_exportar_json' e.pk %}"
-                               class="btn btn-sm btn-outline-info" title="JSON">
+                               class="btn btn-sm btn-outline-secondary" title="JSON">
                                 <i class="bi bi-filetype-json"></i>
                             </a>
                             {% if linha.dono or r.existe %}
                             <a href="{% url 'siresp_app:producao_ir_repasse' e.pk %}"
-                               class="btn btn-sm btn-outline-warning"
+                               class="btn btn-sm btn-outline-secondary"
                                title="{% if r.existe %}Abrir repasse{% else %}Criar repasse{% endif %}">
                                 <i class="bi bi-cash-coin"></i>
                             </a>
@@ -112,7 +104,7 @@
                     {% endwith %}
                     {% empty %}
                     <tr>
-                        <td colspan="10" class="text-center text-muted p-4">
+                        <td colspan="11" class="text-center text-muted p-4">
                             Nenhuma extração no histórico.
                         </td>
                     </tr>

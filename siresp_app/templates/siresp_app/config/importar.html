@@ -1,19 +1,20 @@
 {% extends "siresp_app/base.html" %}
 
 {% block title %}Importar Planilha{% endblock %}
-
-{% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h2><i class="bi bi-upload"></i> Importar Planilha de Agendas</h2>
-    <a href="{% url 'siresp_app:config_lista' %}" class="btn btn-outline-secondary">
+{% block icone_pagina %}bi-upload{% endblock %}
+{% block titulo_pagina %}Importar Planilha de Agendas{% endblock %}
+{% block subtitulo_pagina %}<p class="page-subtitle">Cadastra profissionais, especialidades e minutos de consulta.</p>{% endblock %}
+{% block acoes_pagina %}
+<a href="{% url 'siresp_app:config_lista' %}" class="btn btn-outline-secondary">
         <i class="bi bi-arrow-left"></i> Voltar
     </a>
-</div>
+{% endblock %}
 
-<div class="row justify-content-center">
-    <div class="col-lg-8">
+{% block content %}
 
-        <div class="alert alert-info">
+<div class="form-card">
+
+        <div class="dica">
             <strong>Formatos aceitos:</strong>
             <code>.xls</code>, <code>.xlsx</code>, <code>.xlsm</code>.
             <br>
@@ -55,6 +56,5 @@
             <a href="{% url 'siresp_app:config_regras' %}">Ver regras atuais</a>
         </div></div>
         {% endif %}
-    </div>
 </div>
 {% endblock %}

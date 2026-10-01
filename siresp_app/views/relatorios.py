@@ -26,12 +26,15 @@ def home(request):
     medico = request.GET.get('medico', '').strip()
     competencia = request.GET.get('competencia', '').strip()
     situacao = request.GET.get('situacao', '').strip()
+    unidade = request.GET.get('unidade', '').strip()
 
     qs = base.select_related('extracao', 'usuario_web')
     if situacao in ('finalizado', 'rascunho'):
         qs = qs.filter(status=situacao)
     else:
         situacao = ''
+    if unidade:
+        qs = qs.filter(extracao__unidade_nome=unidade)
     if medico:
         qs = qs.filter(extracao__medico_nome__icontains=medico)
     if competencia:
@@ -47,6 +50,9 @@ def home(request):
 
     return render(request, 'siresp_app/relatorios/home.html', {
         'repasses': repasses,
+        'filtro_unidade': unidade,
+        'unidades': sorted(set(base.exclude(extracao__unidade_nome='')
+                               .values_list('extracao__unidade_nome', flat=True))),
         'filtro_situacao': situacao,
         'ver_usuario': True,
         'qtd_finalizados': sum(1 for r in repasses if r.finalizado),
@@ -96,7 +102,9 @@ def gerar_excel(request):
     ws.merge_cells("A1:O1")
     ws["A1"].alignment = Alignment(horizontal="center")
 
+    from ..services.resumo_service import texto_unidades
     ws["A2"] = (
+        f"{texto_unidades(r.extracao.unidade_nome for r in repasses)}  |  "
         f"Gerado em: {_t.strftime('%d/%m/%Y %H:%M')}  |  "
         f"Total de repasses: {repasses.count()}"
     )
@@ -112,7 +120,7 @@ def gerar_excel(request):
         "Valor Base (R$)", "Bônus 100% (R$)", "Bônus %", "Bônus Aplicado (R$)",
         "Valor/Hora (R$)",
         "Horas Final",
-        "Total Final (R$)", "Competência", "Equipe",
+        "Total Final (R$)", "Competência", "Equipe", "Unidade",
     ]
 
     fonte_cab = Font(bold=True, color="FFFFFF")
@@ -124,7 +132,7 @@ def gerar_excel(request):
         cell.fill = fundo_cab
         cell.alignment = Alignment(horizontal="center", vertical="center")
 
-    larguras = [40, 12, 22, 40, 22, 8, 12, 10, 14, 15, 10, 16, 14, 12, 15, 13, 30]
+    larguras = [40, 12, 22, 40, 22, 8, 12, 10, 14, 15, 10, 16, 14, 12, 15, 13, 30, 34]
     for i, w in enumerate(larguras):
         col_letter = chr(ord('A') + i)
         ws.column_dimensions[col_letter].width = w
@@ -161,6 +169,7 @@ def gerar_excel(request):
             ws.cell(row=linha, column=16, value=repasse.competencia_fmt)
             eq = equipes.get(ext.medico_nome)
             ws.cell(row=linha, column=17, value=eq.nome if eq else '')
+            ws.cell(row=linha, column=18, value=ext.unidade_nome)
 
             ws.cell(row=linha, column=8).number_format = '0'
             for c in (9, 10, 12, 13, 15):
@@ -179,7 +188,7 @@ def gerar_excel(request):
     ws.cell(row=linha, column=15).number_format = 'R$ #,##0.00'
 
     thin = Side(border_style="thin", color="000000")
-    for c in range(1, 18):
+    for c in range(1, 19):
         cell = ws.cell(row=linha, column=c)
         cell.border = Border(top=thin, bottom=thin, left=thin, right=thin)
 
@@ -229,7 +238,7 @@ def gerar_excel(request):
 def gerar_pdf(request):
     from ..services.pdf_service import gerar_pdf as _gerar
     from ..services.profissionais_service import agrupar_por_equipe
-    from ..services.resumo_service import linhas_resumo
+    from ..services.resumo_service import linhas_resumo, texto_unidades
 
     try:
         ids = [int(i) for i in request.POST.getlist('repasses')]
@@ -280,7 +289,8 @@ def gerar_pdf(request):
     competencias = sorted({r.competencia_fmt for r in lista if r.competencia})
     pdf = _gerar(
         'Relatório de Repasse Consolidado',
-        'Competência: ' + (', '.join(competencias) or '-') + f' | {len(lista)} repasse(s)',
+        texto_unidades(r.extracao.unidade_nome for r in lista)
+        + ' | Competência: ' + (', '.join(competencias) or '-') + f' | {len(lista)} repasse(s)',
         grupos_pdf, resumo,
         sum((r.horas_total_final for r in lista), Decimal('0')),
         sum((r.valor_total_final for r in lista), Decimal('0')))

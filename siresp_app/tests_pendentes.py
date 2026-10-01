@@ -9,6 +9,7 @@ from django.urls import reverse
 from .models import Extracao, Profissional, SemProducao
 from .services.profissionais_service import pendentes_extracao
 from .tests import BaseTest
+from .tests_util import AguardaThreads
 
 
 def _ext(user, nome, ini, fim):
@@ -73,7 +74,7 @@ class PendentesPorPeriodoTests(BaseTest):
         self.assertIn('ELISA NEVES', r['nomes'])
 
 
-class LoteGravaSemProducaoTests(TransactionTestCase):
+class LoteGravaSemProducaoTests(AguardaThreads, TransactionTestCase):
     def setUp(self):
         self.user = User.objects.create_user('medico', password='senha123')
         self.client.login(username='medico', password='senha123')

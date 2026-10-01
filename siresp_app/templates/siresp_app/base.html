@@ -14,7 +14,7 @@
 </head>
 <body>
 
-<nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
+<nav class="navbar navbar-expand-lg navbar-dark app-nav">
     <div class="container-fluid">
         <a class="navbar-brand" href="{% url 'siresp_app:home' %}">
             <i class="bi bi-clipboard2-pulse"></i> Repasse Médico
@@ -105,7 +105,17 @@
     </div>
 </nav>
 
-<div class="container-fluid">
+<main class="app-container">
+    {% block cabecalho %}
+    <header class="page-header">
+        <div>
+            <h1 class="page-title"><i class="bi {% block icone_pagina %}bi-circle{% endblock %}"></i>{% block titulo_pagina %}{% endblock %}</h1>
+            {% block subtitulo_pagina %}{% endblock %}
+        </div>
+        <div class="page-actions">{% block acoes_pagina %}{% endblock %}</div>
+    </header>
+    {% endblock %}
+
     {% if messages %}
         {% for message in messages %}
             <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show">
@@ -116,7 +126,7 @@
     {% endif %}
 
     {% block content %}{% endblock %}
-</div>
+</main>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 {% block extra_js %}{% endblock %}

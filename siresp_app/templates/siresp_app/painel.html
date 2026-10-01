@@ -1,11 +1,11 @@
 {% extends "siresp_app/base.html" %}
 
 {% block title %}Início{% endblock %}
-
-{% block content %}
-<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-    <h2><i class="bi bi-house"></i> Painel de {{ nome_mes }}/{{ ano }}</h2>
-    <form method="get" class="d-flex gap-2">
+{% block icone_pagina %}bi-house{% endblock %}
+{% block titulo_pagina %}Painel de {{ nome_mes }}/{{ ano }}{% endblock %}
+{% block subtitulo_pagina %}<p class="page-subtitle">Andamento do mês e indicadores contábeis.</p>{% endblock %}
+{% block acoes_pagina %}
+<form method="get" class="d-flex gap-2">
         <select name="mes" class="form-select form-select-sm" onchange="this.form.submit()">
             {% for n, nome in meses %}<option value="{{ n }}" {% if n == mes %}selected{% endif %}>{{ nome }}</option>{% endfor %}
         </select>
@@ -13,9 +13,11 @@
             {% for a in anos %}<option value="{{ a }}" {% if a == ano %}selected{% endif %}>{{ a }}</option>{% endfor %}
         </select>
     </form>
-</div>
+{% endblock %}
 
-<div class="alert alert-primary d-flex justify-content-between align-items-center flex-wrap gap-2">
+{% block content %}
+
+<div class="proximo-passo d-flex justify-content-between align-items-center flex-wrap gap-2 p-3 mb-4">
     <div><i class="bi bi-signpost-2"></i> <strong>Seu próximo passo:</strong> {{ passo_texto }}</div>
     <a href="{{ passo_url }}" class="btn btn-primary">{{ passo_botao }} <i class="bi bi-arrow-right"></i></a>
 </div>
@@ -23,7 +25,7 @@
 
 <!-- ================= INDICADORES CONTÁBEIS ================= -->
 <div class="d-flex justify-content-between align-items-end mb-2">
-    <h5 class="mb-0"><i class="bi bi-graph-up-arrow"></i> Indicadores de {{ nome_mes }}/{{ ano }}</h5>
+    <h2 class="section-title mb-0"><i class="bi bi-graph-up-arrow"></i>Indicadores de {{ nome_mes }}/{{ ano }}</h2>
     <span class="small text-muted">
         <i class="bi bi-people"></i> Visão de todos os usuários
         · competência = mês da produção
@@ -34,8 +36,8 @@
     <div class="col-xl-3 col-md-6">
         <div class="card h-100 border-success">
             <div class="card-body">
-                <div class="text-muted small">Valor a pagar (total)</div>
-                <div class="fs-3 fw-bold">R$ {{ fin.valor_total|floatformat:"2g" }}</div>
+                <div class="kpi-label">Valor a pagar (total)</div>
+                <div class="kpi-valor">R$ {{ fin.valor_total|floatformat:"2g" }}</div>
                 <div class="small">
                     <span class="text-success">R$ {{ fin.valor_fechado|floatformat:"2g" }} fechado</span> ·
                     <span class="text-warning-emphasis">R$ {{ fin.valor_aberto|floatformat:"2g" }} em rascunho</span>
@@ -49,9 +51,9 @@
     <div class="col-xl-3 col-md-6">
         <div class="card h-100">
             <div class="card-body">
-                <div class="text-muted small">Horas médicas</div>
-                <div class="fs-3 fw-bold">{{ fin.horas_total|floatformat:"2g" }} h</div>
-                <div class="small text-muted">
+                <div class="kpi-label">Horas médicas</div>
+                <div class="kpi-valor">{{ fin.horas_total|floatformat:"2g" }} h</div>
+                <div class="kpi-sub">
                     {{ fin.horas_fechadas|floatformat:"2g" }} h fechadas · {{ fin.horas_abertas|floatformat:"2g" }} h em rascunho
                 </div>
             </div>
@@ -60,18 +62,18 @@
     <div class="col-xl-3 col-md-6">
         <div class="card h-100">
             <div class="card-body">
-                <div class="text-muted small">Valor médio por hora</div>
-                <div class="fs-3 fw-bold">R$ {{ fin.valor_medio_hora|floatformat:"2g" }}</div>
-                <div class="small text-muted">valor total ÷ horas</div>
+                <div class="kpi-label">Valor médio por hora</div>
+                <div class="kpi-valor">R$ {{ fin.valor_medio_hora|floatformat:"2g" }}</div>
+                <div class="kpi-sub">valor total ÷ horas</div>
             </div>
         </div>
     </div>
     <div class="col-xl-3 col-md-6">
         <div class="card h-100">
             <div class="card-body">
-                <div class="text-muted small">Repasses ({{ fin.qtd_total }})</div>
-                <div class="fs-3 fw-bold">{{ fin.qtd_fechados }} <span class="fs-6 text-muted">fechados</span></div>
-                <div class="small text-muted">
+                <div class="kpi-label">Repasses ({{ fin.qtd_total }})</div>
+                <div class="kpi-valor">{{ fin.qtd_fechados }} <span class="kpi-sub">fechados</span></div>
+                <div class="kpi-sub">
                     {{ fin.qtd_abertos }} em rascunho · ticket médio R$ {{ fin.ticket_medio|floatformat:"2g" }}
                 </div>
             </div>
@@ -80,44 +82,44 @@
     <div class="col-xl-3 col-md-6">
         <div class="card h-100">
             <div class="card-body">
-                <div class="text-muted small">Atendimentos x oferta</div>
-                <div class="fs-3 fw-bold">{{ fin.atendimentos }} <span class="fs-6 text-muted">/ {{ fin.oferta }}</span></div>
-                <div class="small text-muted">taxa de atendimento {{ fin.taxa_atendimento|floatformat:1 }}%</div>
+                <div class="kpi-label">Atendimentos x oferta</div>
+                <div class="kpi-valor">{{ fin.atendimentos }} <span class="kpi-sub">/ {{ fin.oferta }}</span></div>
+                <div class="kpi-sub">taxa de atendimento {{ fin.taxa_atendimento|floatformat:1 }}%</div>
             </div>
         </div>
     </div>
     <div class="col-xl-3 col-md-6">
         <div class="card h-100">
             <div class="card-body">
-                <div class="text-muted small">Faturamento (equipes + avulsos)</div>
-                <div class="fs-3 fw-bold">{{ fin.faturamento|length }}</div>
-                <div class="small text-muted">{{ fin.qtd_equipes }} equipe(s) · {{ fin.faturamento|length }} fonte(s) de faturamento</div>
+                <div class="kpi-label">Faturamento (equipes + avulsos)</div>
+                <div class="kpi-valor">{{ fin.faturamento|length }}</div>
+                <div class="kpi-sub">{{ fin.qtd_equipes }} equipe(s) · {{ fin.faturamento|length }} fonte(s) de faturamento</div>
             </div>
         </div>
     </div>
     <div class="col-xl-3 col-md-6">
         <div class="card h-100">
             <div class="card-body">
-                <div class="text-muted small">vs. {{ fin.anterior.rotulo }} (valor)</div>
-                <div class="fs-3 fw-bold">
+                <div class="kpi-label">vs. {{ fin.anterior.rotulo }} (valor)</div>
+                <div class="kpi-valor">
                     {% if fin.anterior.var_valor is None %}<span class="text-muted">—</span>
                     {% elif fin.anterior.var_valor >= 0 %}<span class="text-success">▲ {{ fin.anterior.var_valor|floatformat:1 }}%</span>
                     {% else %}<span class="text-danger">▼ {{ fin.anterior.var_valor|floatformat:1 }}%</span>{% endif %}
                 </div>
-                <div class="small text-muted">mês anterior: R$ {{ fin.anterior.valor|floatformat:"2g" }}</div>
+                <div class="kpi-sub">mês anterior: R$ {{ fin.anterior.valor|floatformat:"2g" }}</div>
             </div>
         </div>
     </div>
     <div class="col-xl-3 col-md-6">
         <div class="card h-100">
             <div class="card-body">
-                <div class="text-muted small">vs. {{ fin.anterior.rotulo }} (horas)</div>
-                <div class="fs-3 fw-bold">
+                <div class="kpi-label">vs. {{ fin.anterior.rotulo }} (horas)</div>
+                <div class="kpi-valor">
                     {% if fin.anterior.var_horas is None %}<span class="text-muted">—</span>
                     {% elif fin.anterior.var_horas >= 0 %}<span class="text-success">▲ {{ fin.anterior.var_horas|floatformat:1 }}%</span>
                     {% else %}<span class="text-danger">▼ {{ fin.anterior.var_horas|floatformat:1 }}%</span>{% endif %}
                 </div>
-                <div class="small text-muted">mês anterior: {{ fin.anterior.horas|floatformat:"2g" }} h</div>
+                <div class="kpi-sub">mês anterior: {{ fin.anterior.horas|floatformat:"2g" }} h</div>
             </div>
         </div>
     </div>
@@ -130,7 +132,7 @@
             <div class="card-header"><i class="bi bi-receipt"></i> Faturamento por equipe e profissional avulso</div>
             <div class="table-responsive">
                 <table class="table table-sm align-middle mb-0 small">
-                    <thead class="table-light"><tr><th>Faturamento</th><th class="text-end">Horas</th><th class="text-end">Valor (R$)</th></tr></thead>
+                    <thead><tr><th>Faturamento</th><th class="text-end">Horas</th><th class="text-end">Valor (R$)</th></tr></thead>
                     <tbody>
                     {% for f in fin.faturamento %}
                         <tr class="{% if f.equipe %}table-primary{% endif %}{% if f.extra %} d-none linha-extra{% endif %}">
@@ -235,7 +237,7 @@
                 <li class="list-group-item d-flex justify-content-between align-items-center">
                     <span class="text-truncate me-2">
                         <a href="{% url 'siresp_app:repasse_ver' p.repasse_id %}" class="text-decoration-none">{{ p.nome }}</a>
-                        {% if p.equipe %}<span class="badge bg-primary">{{ p.equipe }}</span>{% endif %}
+                        {% if p.equipe %}<span class="chip chip-azul">{{ p.equipe }}</span>{% endif %}
                         {% if p.fechado %}<i class="bi bi-lock-fill text-success" title="Finalizado"></i>
                         {% else %}<i class="bi bi-pencil text-warning" title="Rascunho"></i>{% endif %}
                     </span>
@@ -248,14 +250,14 @@
     </div>
 </div>
 
-<h5 class="mb-0"><i class="bi bi-list-check"></i> Andamento do mês</h5>
+<h2 class="section-title mb-0"><i class="bi bi-list-check"></i>Andamento do mês</h2>
 <div class="small text-muted mb-2">Baseado nas <strong>suas</strong> extrações e repasses (o login no SIRESP é individual). Os indicadores acima somam todos os usuários.</div>
 <div class="row g-3">
     <div class="col-lg-3 col-md-6">
         <div class="card h-100">
             <div class="card-body">
-                <div class="text-muted small">1 · Base e regras</div>
-                <div class="fs-3">{{ total }}</div>
+                <div class="kpi-label">1 · Base e regras</div>
+                <div class="kpi-valor">{{ total }}</div>
                 <div class="small mb-2">profissionais ativos na base</div>
                 <a href="{% url 'siresp_app:config_importar' %}" class="btn btn-sm btn-outline-primary">Importar planilha</a>
                 <a href="{% url 'siresp_app:profissionais_lista' %}{{ qs }}" class="btn btn-sm btn-outline-secondary">Ver base</a>
@@ -266,12 +268,12 @@
     <div class="col-lg-3 col-md-6">
         <div class="card h-100">
             <div class="card-body">
-                <div class="text-muted small">2 · Extração no SIRESP</div>
-                <div class="fs-3">{{ extraidos }} <span class="fs-6 text-muted">/ {{ total }}</span></div>
+                <div class="kpi-label">2 · Extração no SIRESP</div>
+                <div class="kpi-valor">{{ extraidos }} <span class="kpi-sub">/ {{ total }}</span></div>
                 <div class="progress mb-2" style="height:6px;"><div class="progress-bar" style="width: {{ pct_extraido }}%"></div></div>
                 <div class="small mb-2">
-                    {% if logado %}<span class="badge bg-success">Logado</span>
-                    {% else %}<span class="badge bg-secondary">Sem sessão</span>{% endif %}
+                    {% if logado %}<span class="chip chip-verde">Logado</span>
+                    {% else %}<span class="chip">Sem sessão</span>{% endif %}
                     {{ cont.pendente }} pendente(s)
                 </div>
                 <a href="{% url 'siresp_app:producao_home' %}" class="btn btn-sm btn-outline-primary">Produção</a>
@@ -283,12 +285,12 @@
     <div class="col-lg-3 col-md-6">
         <div class="card h-100">
             <div class="card-body">
-                <div class="text-muted small">3 · Repasses</div>
-                <div class="fs-3">{{ cont.finalizado }} <span class="fs-6 text-muted">finalizados</span></div>
+                <div class="kpi-label">3 · Repasses</div>
+                <div class="kpi-valor">{{ cont.finalizado }} <span class="kpi-sub">finalizados</span></div>
                 <div class="progress mb-2" style="height:6px;"><div class="progress-bar bg-success" style="width: {{ pct_final }}%"></div></div>
                 <div class="small mb-2">
-                    <span class="badge bg-info text-dark">{{ cont.extraido }} sem repasse</span>
-                    <span class="badge bg-warning text-dark">{{ cont.rascunho }} rascunho</span>
+                    <span class="chip chip-azul">{{ cont.extraido }} sem repasse</span>
+                    <span class="chip chip-ambar">{{ cont.rascunho }} rascunho</span>
                 </div>
                 <a href="{% url 'siresp_app:repasse_lote' %}{{ qs }}" class="btn btn-sm btn-outline-primary">Repasse em lote</a>
             </div>
@@ -298,8 +300,8 @@
     <div class="col-lg-3 col-md-6">
         <div class="card h-100">
             <div class="card-body">
-                <div class="text-muted small">4 · Fechamento</div>
-                <div class="fs-3">{{ cont.pendente }}</div>
+                <div class="kpi-label">4 · Fechamento</div>
+                <div class="kpi-valor">{{ cont.pendente }}</div>
                 <div class="small mb-2">profissional(is) sem nenhuma extração no mês</div>
                 <a href="{% url 'siresp_app:profissionais_lista' %}{{ qs }}&status=pendente" class="btn btn-sm btn-outline-danger">Ver pendentes</a>
                 <a href="{% url 'siresp_app:relatorios_home' %}" class="btn btn-sm btn-outline-secondary">Relatórios</a>

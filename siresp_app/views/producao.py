@@ -119,6 +119,57 @@ def enviar_captcha(request):
 
 
 # =========================================================
+# TELA DO SIRESP (diagnóstico quando o login não segue o caminho conhecido)
+# =========================================================
+@login_required
+@require_GET
+def tela_siresp(request):
+    tela = scraper_service.tela_siresp(request.user)
+    if not tela:
+        return JsonResponse({'ok': False, 'mensagem': 'Nenhuma tela capturada.'})
+    return JsonResponse({'ok': True, 'tela': tela})
+
+
+# =========================================================
+# ESCOLHER UNIDADE (quando o SIRESP oferece mais de uma)
+# =========================================================
+@login_required
+@require_POST
+def escolher_unidade(request):
+    try:
+        data = json.loads(request.body)
+    except Exception:
+        return JsonResponse({'ok': False, 'mensagem': 'Payload inválido.'})
+
+    valor = str(data.get('valor', '')).strip()
+    if not valor:
+        return JsonResponse({'ok': False, 'mensagem': 'Selecione uma unidade.'})
+
+    resultado = scraper_service.escolher_unidade(request.user, valor)
+
+    if resultado.get('ok') and data.get('lembrar'):
+        config = ConfiguracaoLogin.get_para(request.user)
+        config.unidade_preferida = valor
+        config.save(update_fields=['unidade_preferida', 'atualizado_em'])
+        auditoria.registrar(request, 'UNIDADE_SIRESP',
+                            f'Unidade do SIRESP lembrada: {valor}')
+
+    return JsonResponse(resultado)
+
+
+@login_required
+@require_POST
+def esquecer_unidade(request):
+    config = ConfiguracaoLogin.get_para(request.user)
+    if config.unidade_preferida:
+        config.unidade_preferida = ''
+        config.save(update_fields=['unidade_preferida', 'atualizado_em'])
+        auditoria.registrar(request, 'UNIDADE_SIRESP', 'Unidade lembrada removida')
+        messages.success(request, 'Unidade esquecida: no próximo login você escolherá de novo.')
+    return redirect('siresp_app:producao_home')
+
+
+# =========================================================
 # RECARREGAR CAPTCHA
 # =========================================================
 @login_required
@@ -152,6 +203,14 @@ def status_login(request):
         'logado': info['logado'],
         'mensagem': sessao.mensagem,
     }
+    if info.get('tela_id'):
+        resposta['tela_id'] = info['tela_id']
+    if info['estado'] == 'logado':
+        resposta['unidade'] = info.get('unidade')
+    if info['estado'] == 'aguardando_unidade':
+        resposta['unidades'] = info['unidades']
+        resposta['sugerida'] = info.get('sugerida', '')
+        resposta['preferida'] = ConfiguracaoLogin.get_para(request.user).unidade_preferida
     if 'captcha_b64' in info:
         resposta['captcha_b64'] = info['captcha_b64']
         resposta['captcha_id'] = info.get('captcha_id', 0)
@@ -237,6 +296,7 @@ def extrair_producao(request):
     if not info['logado']:
         return JsonResponse({'ok': False, 'mensagem': 'Login ainda não concluído.'})
 
+    unidade = scraper_service.unidade_atual(request.user) or {}
     extracao = Extracao.objects.create(
         usuario_web=request.user,
         medico_nome=medico['nome'],
@@ -244,6 +304,8 @@ def extrair_producao(request):
         medico_codigo=medico.get('codigo', ''),
         data_ini=data_ini,
         data_fim=data_fim,
+        unidade_nome=unidade.get('nome', ''),
+        unidade_codigo=unidade.get('codigo', ''),
     )
 
     def _run():

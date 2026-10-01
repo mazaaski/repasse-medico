@@ -233,34 +233,14 @@ def enviar_captcha_e_continuar(user, texto):
     cpf_ult = config.cpf_ultimos or ""
     rg_pri = config.rg_primeiros or ""
     rg_ult = config.rg_ultimos or ""
+    unidade_pref = config.unidade_preferida or ""
 
     def _run():
         try:
             resultado_continuar = scraper.continuar_login_apos_captcha(
-                cpf_pri, cpf_ult, rg_pri, rg_ult,
+                cpf_pri, cpf_ult, rg_pri, rg_ult, unidade_pref,
             )
-
-            if not isinstance(resultado_continuar, dict):
-                resultado_continuar = {
-                    'ok': False,
-                    'mensagem': 'Resposta inválida do scraper.',
-                    'captcha_novo': False,
-                }
-
-            if resultado_continuar.get('ok'):
-                _atualizar_status_sessao(user, 'logado', 'Login concluído.')
-                print(f"[SIRESP] Login OK para user {user.id}")
-            else:
-                msg = resultado_continuar.get('mensagem', 'Erro desconhecido.')
-                captcha_novo = resultado_continuar.get('captcha_novo', False)
-
-                if captcha_novo:
-                    _atualizar_status_sessao(user, 'aguardando', msg)
-                else:
-                    _atualizar_status_sessao(user, 'erro', msg)
-
-                print(f"[SIRESP] Login falhou: {msg}")
-
+            _tratar_resultado_login(user, resultado_continuar)
         except Exception as e:
             print(f"[SIRESP] Erro na continuação do login: {e}")
             import traceback
@@ -275,6 +255,66 @@ def enviar_captcha_e_continuar(user, texto):
         'ok': True,
         'mensagem': 'CAPTCHA enviado. Validando...',
     }
+
+
+def _tratar_resultado_login(user, resultado):
+    """Converte o retorno do scraper (continuar/concluir login) no status da sessão."""
+    if not isinstance(resultado, dict):
+        resultado = {
+            'ok': False,
+            'mensagem': 'Resposta inválida do scraper.',
+            'captcha_novo': False,
+        }
+
+    if resultado.get('ok'):
+        _atualizar_status_sessao(user, 'logado', 'Login concluído.')
+        print(f"[SIRESP] Login OK para user {user.id}")
+        return
+
+    if resultado.get('aguardando_unidade'):
+        _atualizar_status_sessao(user, 'aguardando', 'Selecione a unidade.')
+        print(f"[SIRESP] Aguardando escolha de unidade do user {user.id}")
+        return
+
+    msg = resultado.get('mensagem', 'Erro desconhecido.')
+    if resultado.get('captcha_novo', False):
+        _atualizar_status_sessao(user, 'aguardando', msg)
+    else:
+        _atualizar_status_sessao(user, 'erro', msg)
+    print(f"[SIRESP] Login falhou: {msg}")
+
+
+def escolher_unidade(user, valor):
+    """
+    Aplica a unidade escolhida pelo usuário e continua o login (dígitos de
+    CPF/RG) em segundo plano. Retorna {'ok': bool, 'mensagem': str}.
+    """
+    scraper = _SCRAPERS.get(user.id)
+    if not scraper:
+        return {'ok': False, 'mensagem': 'Sessão expirou. Faça login novamente.'}
+    if not getattr(scraper, 'aguardando_unidade', False):
+        return {'ok': False, 'mensagem': 'Nenhuma escolha de unidade está pendente.'}
+
+    try:
+        res = scraper.escolher_unidade(valor)
+    except Exception as e:
+        print(f"[SIRESP] Erro ao escolher unidade do user {user.id}: {e}")
+        return {'ok': False, 'mensagem': f'Erro ao escolher a unidade: {e}'}
+    if not res.get('ok'):
+        return {'ok': False, 'mensagem': res.get('mensagem', 'Não consegui escolher a unidade.')}
+
+    _atualizar_status_sessao(user, 'abrindo', 'Unidade selecionada. Enviando dígitos de segurança...')
+
+    def _run():
+        try:
+            _tratar_resultado_login(user, scraper.concluir_login())
+        except Exception as e:
+            print(f"[SIRESP] Erro ao concluir o login: {e}")
+            _atualizar_status_sessao(user, 'erro', f'Erro: {e}')
+            _tratar_erro_scraper(user, e)
+
+    threading.Thread(target=_run, daemon=True).start()
+    return {'ok': True, 'mensagem': 'Unidade selecionada. Concluindo o login...'}
 
 
 # =========================================================
@@ -296,10 +336,19 @@ def recarregar_captcha(user):
 # =========================================================
 # STATUS DO LOGIN
 # =========================================================
-def status_login(user):
+def _status_login_base(user):
     scraper = _SCRAPERS.get(user.id)
     if not scraper:
         return {'estado': 'sem_sessao', 'logado': False}
+
+    if getattr(scraper, 'aguardando_unidade', False):
+        from siresp_scraper import VALUE_ALVO
+        return {
+            'estado': 'aguardando_unidade',
+            'logado': False,
+            'unidades': list(scraper.unidades_disponiveis),
+            'sugerida': VALUE_ALVO,
+        }
 
     try:
         if scraper.captcha_disponivel and scraper.captcha_imagem_b64:
@@ -316,7 +365,7 @@ def status_login(user):
         return {'estado': 'abrindo', 'logado': False}
 
     if user.id in _OCUPADOS:
-        return {'estado': 'logado', 'logado': True}
+        return {'estado': 'logado', 'logado': True, 'unidade': getattr(scraper, 'unidade_atual', None)}
 
     try:
         _ = scraper.driver.current_url
@@ -329,7 +378,28 @@ def status_login(user):
         )
         return {'estado': 'sem_sessao', 'logado': False}
 
-    return {'estado': 'logado', 'logado': True}
+    return {'estado': 'logado', 'logado': True, 'unidade': getattr(scraper, 'unidade_atual', None)}
+
+
+def status_login(user):
+    """Estado do login + (quando houver) o id da última tela do SIRESP capturada."""
+    info = _status_login_base(user)
+    scraper = _SCRAPERS.get(user.id)
+    if scraper is not None and getattr(scraper, 'ultima_tela', None):
+        info['tela_id'] = scraper.ultima_tela_id
+    return info
+
+
+def unidade_atual(user):
+    """Unidade do SIRESP com a qual o usuário está logado ({valor, texto, nome, codigo}) ou None."""
+    scraper = _SCRAPERS.get(user.id)
+    return getattr(scraper, 'unidade_atual', None) if scraper is not None else None
+
+
+def tela_siresp(user):
+    """Última tela do SIRESP capturada (imagem em base64, texto e URL) ou None."""
+    scraper = _SCRAPERS.get(user.id)
+    return getattr(scraper, 'ultima_tela', None) if scraper is not None else None
 
 
 # =========================================================

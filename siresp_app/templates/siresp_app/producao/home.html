@@ -1,11 +1,11 @@
 {% extends "siresp_app/base.html" %}
 
 {% block title %}Produção{% endblock %}
-
-{% block content %}
-<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-    <h2 class="mb-0"><i class="bi bi-clipboard2-pulse"></i> Produção</h2>
-    <div class="d-flex gap-2">
+{% block icone_pagina %}bi-clipboard2-pulse{% endblock %}
+{% block titulo_pagina %}Produção{% endblock %}
+{% block subtitulo_pagina %}<p class="page-subtitle">Conecte-se ao SIRESP e extraia a produção do período.</p>{% endblock %}
+{% block acoes_pagina %}
+<div class="d-flex gap-2">
         <a href="{% url 'siresp_app:producao_historico' %}" class="btn btn-outline-secondary">
             <i class="bi bi-clock-history"></i> Histórico de extrações
         </a>
@@ -13,7 +13,9 @@
             Próximo: Repasse em Lote <i class="bi bi-arrow-right"></i>
         </a>
     </div>
-</div>
+{% endblock %}
+
+{% block content %}
 
 <div class="row g-3">
 
@@ -25,6 +27,22 @@
                 <div id="status-box" class="alert alert-secondary py-2 mb-3">
                     <span id="status-icon">⏳</span>
                     <span id="status-text">Verificando...</span>
+                    <div id="status-unidade" class="small mt-1 d-none">
+                        <i class="bi bi-building"></i> Unidade: <strong id="status-unidade-nome"></strong>
+                        <div id="status-unidade-detalhe" class="text-muted"></div>
+                    </div>
+                </div>
+
+                <div id="tela-siresp" class="d-none mb-3">
+                    <div class="small text-danger mb-1">
+                        <i class="bi bi-window"></i> <strong>O que o SIRESP mostrou</strong>
+                        <span class="text-muted">(o login não seguiu o caminho esperado)</span>
+                    </div>
+                    <div id="tela-alerta" class="alert alert-warning py-1 small mb-1 d-none"></div>
+                    <a id="tela-link" href="#" target="_blank" rel="noopener">
+                        <img id="tela-img" class="img-fluid border rounded" alt="Tela do SIRESP">
+                    </a>
+                    <div id="tela-texto" class="small text-muted mt-1" style="max-height:110px; overflow-y:auto;"></div>
                 </div>
 
                 <div class="d-flex gap-2">
@@ -83,6 +101,15 @@
                             </div>
                         </div>
                     </form>
+                    {% if config.unidade_preferida %}
+                    <form method="post" action="{% url 'siresp_app:producao_esquecer_unidade' %}"
+                          class="mt-2 small d-flex align-items-center gap-2">
+                        {% csrf_token %}
+                        <span class="text-muted"><i class="bi bi-building"></i> Unidade lembrada:
+                            <strong>{{ config.unidade_preferida }}</strong></span>
+                        <button class="btn btn-sm btn-outline-secondary ms-auto">Esquecer</button>
+                    </form>
+                    {% endif %}
                 </details>
             </div>
         </div>
@@ -131,7 +158,7 @@
                                     title="Profissionais da base sem extração que cubra o período informado acima">
                                 <i class="bi bi-people"></i> Carregar pendentes do período
                             </button>
-                            <button id="btn-lote" class="btn btn-success" onclick="iniciarLote()" disabled>
+                            <button id="btn-lote" class="btn btn-primary" onclick="iniciarLote()" disabled>
                                 <i class="bi bi-play-fill"></i> Buscar e extrair em lote
                             </button>
                             <button id="btn-lote-cancelar" class="btn btn-outline-danger d-none" onclick="cancelarLote()">
@@ -170,7 +197,7 @@
                         <div id="medico-selecionado" class="alert alert-light border py-2 mb-2">
                             Nenhum médico selecionado.
                         </div>
-                        <button id="btn-extrair" class="btn btn-success" onclick="extrair()" disabled>
+                        <button id="btn-extrair" class="btn btn-primary" onclick="extrair()" disabled>
                             <i class="bi bi-play-fill"></i> Extrair este médico
                         </button>
 
@@ -194,7 +221,7 @@
      data-bs-keyboard="false" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
-            <div class="modal-header bg-primary text-white">
+            <div class="modal-header">
                 <h5 class="modal-title">
                     <i class="bi bi-shield-lock"></i> Digite o CAPTCHA
                 </h5>
@@ -239,12 +266,45 @@
                      style="display:none;"></div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="cancelarCaptcha()">
+                <button type="button" class="btn btn-outline-secondary" onclick="cancelarCaptcha()">
                     Cancelar
                 </button>
                 <button type="button" class="btn btn-primary" onclick="enviarCaptcha()">
                     <i class="bi bi-check-lg"></i> Enviar
                 </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal de UNIDADE (igual ao CAPTCHA: aparece sozinho e segue ao escolher) -->
+<div class="modal fade" id="modalUnidade" data-bs-backdrop="static"
+     data-bs-keyboard="false" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-building"></i> Selecione a unidade</h5>
+            </div>
+            <div class="modal-body">
+                <p class="small text-muted mb-2">
+                    O SIRESP pediu para escolher a unidade de trabalho. <strong>Clique na unidade</strong>:
+                    o sistema confirma no SIRESP, envia os dígitos de CPF/RG e conclui o login sozinho.
+                </p>
+                <div class="form-check mb-2">
+                    <input class="form-check-input" type="checkbox" id="unidade-lembrar">
+                    <label class="form-check-label small" for="unidade-lembrar">
+                        Lembrar minha escolha nos próximos logins
+                        (marque <em>antes</em> de clicar; dá para esquecer em "Credenciais do SIRESP")
+                    </label>
+                </div>
+                <div id="unidade-lista" class="list-group" style="max-height: 320px; overflow-y: auto;"></div>
+                <div id="unidade-enviando" class="text-muted small mt-3" style="display:none;">
+                    <div class="spinner-border spinner-border-sm"></div> Confirmando a unidade e continuando o login...
+                </div>
+                <div id="unidade-erro" class="alert alert-danger mt-2 py-2 small" style="display:none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" onclick="cancelarUnidade()">Cancelar login</button>
             </div>
         </div>
     </div>
@@ -272,6 +332,10 @@ let extracaoAtual = null;
 let intervalStatus = null;
 let modalCaptcha = null;
 let captchaMostrado = 0;
+let modalUnidade = null;
+let unidadeMostrada = false;
+let unidadeEscolhidaEm = 0;
+let telaVista = 0;
 
 // =========================================================
 // LOG
@@ -466,6 +530,119 @@ document.addEventListener('keydown', function(e) {
 });
 
 // =========================================================
+// UNIDADE (quando o SIRESP oferece mais de uma)
+// =========================================================
+let unidadeEnviando = false;
+
+function abrirModalUnidade(unidades, sugerida, preferida) {
+    const lista = document.getElementById('unidade-lista');
+    lista.innerHTML = '';
+    unidadeEnviando = false;
+
+    unidades.forEach(u => {
+        const item = document.createElement('button');
+        item.type = 'button';
+        item.className = 'list-group-item list-group-item-action d-flex align-items-center gap-2';
+        const icone = document.createElement('i');
+        icone.className = 'bi bi-building text-primary';
+        const texto = document.createElement('span');
+        texto.className = 'flex-grow-1';
+        texto.textContent = u.texto;                 // texto vem do SIRESP: nunca vira HTML
+        item.appendChild(icone);
+        item.appendChild(texto);
+        if (u.valor === preferida || (!preferida && u.valor === sugerida)) {
+            const tag = document.createElement('span');
+            tag.className = 'chip chip-azul';
+            tag.textContent = u.valor === preferida ? 'lembrada' : 'sugerida';
+            item.appendChild(tag);
+        }
+        item.addEventListener('click', () => enviarUnidade(u.valor));   // clicou: segue o login
+        lista.appendChild(item);
+    });
+
+    document.getElementById('unidade-lembrar').checked = Boolean(preferida);
+    document.getElementById('unidade-erro').style.display = 'none';
+    document.getElementById('unidade-enviando').style.display = 'none';
+
+    if (!modalUnidade) {
+        modalUnidade = new bootstrap.Modal(document.getElementById('modalUnidade'));
+    }
+    modalUnidade.show();
+    unidadeMostrada = true;
+}
+
+function fecharModalUnidade() {
+    if (modalUnidade && unidadeMostrada) modalUnidade.hide();
+    unidadeMostrada = false;
+}
+
+function cancelarUnidade() {
+    if (!confirm('Cancelar o login? A sessão do Chrome será fechada.')) return;
+    fecharModalUnidade();
+    fecharSessao();
+}
+
+function enviarUnidade(valor) {
+    if (unidadeEnviando) return;                     // evita clique duplo
+    unidadeEnviando = true;
+    const erro = document.getElementById('unidade-erro');
+    const lista = document.getElementById('unidade-lista');
+    erro.style.display = 'none';
+    lista.querySelectorAll('button').forEach(b => { b.disabled = true; });
+    document.getElementById('unidade-enviando').style.display = 'block';
+    log('→ Unidade escolhida: ' + valor);
+
+    postJSON('{% url "siresp_app:producao_escolher_unidade" %}', {
+        valor: valor,
+        lembrar: document.getElementById('unidade-lembrar').checked,
+    }).then(data => {
+        log('← ' + JSON.stringify(data));
+        if (!data.ok) {
+            erro.textContent = data.mensagem || 'Erro ao escolher a unidade.';
+            erro.style.display = 'block';
+            document.getElementById('unidade-enviando').style.display = 'none';
+            lista.querySelectorAll('button').forEach(b => { b.disabled = false; });
+            unidadeEnviando = false;
+            return;
+        }
+        unidadeEscolhidaEm = Date.now();
+        fecharModalUnidade();
+        const box = document.getElementById('status-box');
+        box.className = 'alert alert-warning py-2 mb-3';
+        document.getElementById('status-icon').textContent = '⏳';
+        document.getElementById('status-text').textContent = 'Enviando dígitos de segurança...';
+        unidadeEnviando = false;
+    }).catch(e => {
+        erro.textContent = 'Erro: ' + e;
+        erro.style.display = 'block';
+        document.getElementById('unidade-enviando').style.display = 'none';
+        lista.querySelectorAll('button').forEach(b => { b.disabled = false; });
+        unidadeEnviando = false;
+        log('❌ ' + e);
+    });
+}
+
+// =========================================================
+// TELA DO SIRESP (diagnóstico)
+// =========================================================
+function carregarTelaSiresp() {
+    fetch('{% url "siresp_app:producao_tela_siresp" %}')
+        .then(r => r.json())
+        .then(data => {
+            if (!data.ok) return;
+            const t = data.tela;
+            document.getElementById('tela-img').src = t.imagem_b64 || '';
+            document.getElementById('tela-link').href = t.imagem_b64 || '#';
+            document.getElementById('tela-texto').textContent = t.texto || '(sem texto visível)';
+            const al = document.getElementById('tela-alerta');
+            al.textContent = t.alerta ? 'SIRESP avisou: ' + t.alerta : '';
+            al.classList.toggle('d-none', !t.alerta);
+            document.getElementById('tela-siresp').classList.remove('d-none');
+            log('🖼️ Tela do SIRESP capturada: ' + (t.texto || '').substring(0, 120));
+        });
+}
+
+// =========================================================
 // STATUS
 // =========================================================
 function atualizarStatus() {
@@ -478,6 +655,31 @@ function atualizarStatus() {
             const btnLogin = document.getElementById('btn-login');
 
             box.className = 'alert py-2 mb-3';
+
+            if (data.estado !== 'aguardando_unidade') {
+                fecharModalUnidade();
+            }
+
+            // tela do SIRESP: mostra quando o servidor capturou uma nova; esconde ao logar/fechar
+            if (data.tela_id && data.tela_id !== telaVista) {
+                telaVista = data.tela_id;
+                carregarTelaSiresp();
+            } else if (!data.tela_id) {
+                telaVista = 0;
+                document.getElementById('tela-siresp').classList.add('d-none');
+            }
+
+            // unidade com a qual o login foi feito (os relatórios saem em nome dela)
+            const blocoUnid = document.getElementById('status-unidade');
+            if (data.estado === 'logado') {
+                blocoUnid.classList.remove('d-none');
+                const u = data.unidade;
+                document.getElementById('status-unidade-nome').textContent =
+                    u ? u.nome : 'não informada pelo SIRESP neste login';
+                document.getElementById('status-unidade-detalhe').textContent = u ? u.texto : '';
+            } else {
+                blocoUnid.classList.add('d-none');
+            }
 
             if (data.estado === 'logado') {
                 box.classList.add('alert-success');
@@ -496,6 +698,18 @@ function atualizarStatus() {
 
                 if (data.captcha_b64 && data.captcha_id !== captchaMostrado && data.captcha_id > 0) {
                     abrirModalCaptcha(data.captcha_b64, data.captcha_id);
+                }
+
+            } else if (data.estado === 'aguardando_unidade') {
+                box.classList.add('alert-warning');
+                icon.textContent = '🏢';
+                text.textContent = 'Escolha a unidade';
+                btnLogin.disabled = true;
+                btnLogin.innerHTML = '<i class="bi bi-building"></i> Aguardando unidade';
+                fecharModalCaptcha();
+                // (não reabre por causa de uma consulta de status atrasada logo após a escolha)
+                if (!unidadeMostrada && Date.now() - unidadeEscolhidaEm > 4000) {
+                    abrirModalUnidade(data.unidades || [], data.sugerida || '', data.preferida || '');
                 }
 
             } else if (data.estado === 'abrindo') {
@@ -519,7 +733,7 @@ function atualizarStatus() {
         .catch(e => log('❌ Erro no status: ' + e));
 }
 
-intervalStatus = setInterval(atualizarStatus, 2000);
+intervalStatus = setInterval(atualizarStatus, 1000);
 atualizarStatus();
 
 // =========================================================

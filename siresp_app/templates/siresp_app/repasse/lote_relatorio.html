@@ -1,12 +1,11 @@
 {% extends "siresp_app/base.html" %}
 
 {% block title %}Relatório do Lote{% endblock %}
-
-{% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h2><i class="bi bi-clipboard-data"></i> Relatório e Edição do Lote</h2>
-    <div>
-        {% if todos_finalizados %}
+{% block icone_pagina %}bi-clipboard-data{% endblock %}
+{% block titulo_pagina %}Relatório e Edição do Lote{% endblock %}
+{% block subtitulo_pagina %}<p class="page-subtitle">Edite e confira os valores; depois finalize para liberar Excel e PDF.</p>{% endblock %}
+{% block acoes_pagina %}
+{% if todos_finalizados %}
         <a href="{% url 'siresp_app:repasse_lote_relatorio_excel' %}?ids={{ ids }}" class="btn btn-success" onclick="return avisarSeSuja();">
             <i class="bi bi-file-earmark-excel"></i> Exportar Excel
         </a>
@@ -24,7 +23,12 @@
         <a href="{% url 'siresp_app:repasse_lote' %}" class="btn btn-outline-secondary">
             <i class="bi bi-arrow-left"></i> Voltar
         </a>
-    </div>
+{% endblock %}
+
+{% block content %}
+
+<div class="dica dica-neutra">
+    <i class="bi bi-building"></i> <strong>Relatório em nome da unidade</strong> &mdash; {{ unidades_txt }}
 </div>
 
 {% if todos_finalizados %}
@@ -61,17 +65,17 @@
 
 <div class="row g-3 mb-3">
     <div class="col-md-3"><div class="card"><div class="card-body py-2">
-        <div class="small text-muted">Profissionais</div><div class="fs-4">{{ blocos|length }}</div></div></div></div>
+        <div class="kpi-label">Profissionais</div><div class="kpi-valor">{{ blocos|length }}</div></div></div></div>
     <div class="col-md-3"><div class="card"><div class="card-body py-2">
-        <div class="small text-muted">Horas totais</div><div class="fs-4" id="tot-horas">{{ tot_horas|floatformat:"2g" }}</div></div></div></div>
+        <div class="kpi-label">Horas totais</div><div class="kpi-valor" id="tot-horas">{{ tot_horas|floatformat:"2g" }}</div></div></div></div>
     <div class="col-md-3"><div class="card"><div class="card-body py-2">
-        <div class="small text-muted">Valor total</div><div class="fs-4 text-success">R$ <span id="tot-valor">{{ tot_valor|floatformat:"2g" }}</span></div></div></div></div>
+        <div class="kpi-label">Valor total</div><div class="kpi-valor text-success">R$ <span id="tot-valor">{{ tot_valor|floatformat:"2g" }}</span></div></div></div></div>
     <div class="col-md-3"><div class="card"><div class="card-body py-2">
-        <div class="small text-muted">Linhas sem regra</div>
-        <div class="fs-4 {% if qtd_sem_regra %}text-danger{% endif %}">{{ qtd_sem_regra }}</div></div></div></div>
+        <div class="kpi-label">Linhas sem regra</div>
+        <div class="kpi-valor {% if qtd_sem_regra %}text-danger{% endif %}">{{ qtd_sem_regra }}</div></div></div></div>
 </div>
 
-<div class="d-flex align-items-center gap-3 mb-3 sticky-top bg-body py-2" style="top:0; z-index:5;">
+<div class="d-flex align-items-center gap-3 sticky-barra">
     <button id="btn-salvar" class="btn btn-primary" onclick="salvarEdicoes()" disabled>
         <i class="bi bi-save"></i> Salvar edições
     </button>
@@ -91,8 +95,8 @@
         </div>
     </div>
     <div class="fs-6">
-        <span class="badge bg-primary"><span class="eq-horas">{{ g.horas|floatformat:"2g" }}</span> h</span>
-        <span class="badge bg-success">Total da equipe: R$ <span class="eq-valor">{{ g.valor|floatformat:"2g" }}</span></span>
+        <span class="chip chip-azul"><span class="eq-horas">{{ g.horas|floatformat:"2g" }}</span> h</span>
+        <span class="chip chip-verde">Total da equipe: R$ <span class="eq-valor">{{ g.valor|floatformat:"2g" }}</span></span>
     </div>
 </div>
 {% endif %}
@@ -105,16 +109,15 @@
             <span class="text-muted small">— {{ b.extracao.data_ini }} a {{ b.extracao.data_fim }}</span>
         </div>
         <div>
-            {% if b.outro_dono %}<span class="badge bg-light text-dark border" title="Repasse de outro usuário: modo consulta"><i class="bi bi-eye"></i> {{ b.repasse.usuario_web.username }}</span>{% endif %}
-            {% if b.repasse.finalizado %}<span class="badge bg-success"><i class="bi bi-lock-fill"></i> Finalizado · {{ b.repasse.competencia_fmt }}</span>
-            {% else %}<span class="badge bg-warning text-dark">Rascunho</span>{% endif %}
-            <span class="badge bg-primary"><span class="sub-horas">{{ b.horas|floatformat:"2g" }}</span> h</span>
-            <span class="badge bg-success">R$ <span class="sub-valor">{{ b.valor|floatformat:"2g" }}</span></span>
+            {% if b.outro_dono %}<span class="chip" title="Repasse de outro usuário: modo consulta"><i class="bi bi-eye"></i> {{ b.repasse.usuario_web.username }}</span>{% endif %}
+            {% if b.repasse.finalizado %}{% include "siresp_app/_situacao.html" with status="finalizado" %}<span class="small text-muted">competência {{ b.repasse.competencia_fmt }}</span>{% else %}{% include "siresp_app/_situacao.html" with status="rascunho" %}{% endif %}
+            <span class="chip chip-azul"><span class="sub-horas">{{ b.horas|floatformat:"2g" }}</span> h</span>
+            <span class="chip chip-verde">R$ <span class="sub-valor">{{ b.valor|floatformat:"2g" }}</span></span>
         </div>
     </div>
     <div class="table-responsive">
         <table class="table table-sm mb-0 small align-middle">
-            <thead class="table-light">
+            <thead>
                 <tr><th style="width:36px;" title="Incluir no repasse"></th>
                     <th>Especialidade</th><th>Grupo</th>
                     <th style="width:80px;">Min</th><th style="width:110px;">Valor base</th>
@@ -127,7 +130,7 @@
                     <td><input type="checkbox" class="form-check-input f-marcado" {% if i.marcado %}checked{% endif %}
                                {% if bloqueado %}disabled{% endif %}></td>
                     <td>{{ i.especialidade }}
-                        {% if i.faltou_regra %}<span class="badge bg-danger">sem regra</span>{% endif %}</td>
+                        {% if i.faltou_regra %}<span class="chip chip-vermelho">sem regra</span>{% endif %}</td>
                     <td>{{ i.grupo_nome }}</td>
                     <td><input type="number" step="1" min="0" class="form-control form-control-sm f-minutos"
                                value="{{ i.minutos|floatformat:0 }}" {% if bloqueado %}disabled{% endif %}></td>
@@ -163,12 +166,12 @@
 {% endfor %}
 
 <div class="card mb-4 border-success">
-    <div class="card-header bg-success text-white">
+    <div class="card-header">
         <i class="bi bi-receipt"></i> Resumo por faturamento (equipes e profissionais avulsos)
     </div>
     <div class="table-responsive">
         <table class="table table-sm mb-0 align-middle">
-            <thead class="table-light">
+            <thead>
                 <tr><th>Faturamento</th><th>Profissionais</th>
                     <th class="text-end">Horas</th><th class="text-end">Valor (R$)</th></tr>
             </thead>

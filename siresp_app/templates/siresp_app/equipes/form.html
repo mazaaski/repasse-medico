@@ -1,11 +1,12 @@
 {% extends "siresp_app/base.html" %}
 
 {% block title %}{% if equipe %}Editar equipe{% else %}Nova equipe{% endif %}{% endblock %}
+{% block icone_pagina %}bi-people-fill{% endblock %}
+{% block titulo_pagina %}{% if equipe %}Editar equipe{% else %}Nova equipe{% endif %}{% endblock %}
+{% block subtitulo_pagina %}<p class="page-subtitle">Escolha o nome da empresa faturada e os profissionais que fazem parte dela.</p>{% endblock %}
 
 {% block content %}
-<h2 class="mb-3"><i class="bi bi-people-fill"></i> {% if equipe %}Editar equipe{% else %}Nova equipe{% endif %}</h2>
-
-<form method="post">
+<form method="post" class="form-card">
     {% csrf_token %}
     <div class="card mb-3">
         <div class="card-body">
@@ -27,7 +28,7 @@
                        id="p{{ x.p.pk }}" {% if x.marcado %}checked{% endif %} {% if x.bloqueado %}disabled{% endif %}>
                 <label class="form-check-label {% if x.bloqueado %}text-muted{% endif %}" for="p{{ x.p.pk }}">
                     {{ x.p.nome }}
-                    {% if x.bloqueado %}<span class="badge bg-light text-dark border">já na equipe {{ x.p.equipe.nome }}</span>{% endif %}
+                    {% if x.bloqueado %}<span class="chip">já na equipe {{ x.p.equipe.nome }}</span>{% endif %}
                 </label>
             </div>
             {% empty %}
@@ -37,7 +38,7 @@
     </div>
 
     <button class="btn btn-primary"><i class="bi bi-save"></i> Salvar equipe</button>
-    <a href="{% url 'siresp_app:equipes_lista' %}" class="btn btn-secondary">Cancelar</a>
+    <a href="{% url 'siresp_app:equipes_lista' %}" class="btn btn-outline-secondary">Cancelar</a>
 </form>
 {% endblock %}
 

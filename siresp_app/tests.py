@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from django.contrib.auth.models import User
+from .tests_util import AguardaThreads
 from django.test import TestCase, TransactionTestCase
 from django.urls import reverse
 
@@ -403,7 +404,7 @@ class LoteTests(BaseTest):
         self.assertFalse(r.json()['ok'])
 
 
-class LoteThreadTests(TransactionTestCase):
+class LoteThreadTests(AguardaThreads, TransactionTestCase):
     # TransactionTestCase: a thread de fundo precisa enxergar os dados commitados
     def setUp(self):
         User.objects.create_user('medico', password='senha123')

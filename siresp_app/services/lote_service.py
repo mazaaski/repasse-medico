@@ -137,6 +137,7 @@ def _processar_item(user, job, item, origem):
         item['mensagem'] = 'Nenhuma produção no período.'
         return
 
+    unidade = scraper_service.unidade_atual(user) or {}
     extracao = Extracao.objects.create(
         usuario_web=user,
         medico_nome=medico['nome'],
@@ -144,6 +145,8 @@ def _processar_item(user, job, item, origem):
         medico_codigo=medico.get('codigo', ''),
         data_ini=job['data_ini'],
         data_fim=job['data_fim'],
+        unidade_nome=unidade.get('nome', ''),
+        unidade_codigo=unidade.get('codigo', ''),
     )
     for i, d in enumerate(dados):
         ItemProducao.objects.create(

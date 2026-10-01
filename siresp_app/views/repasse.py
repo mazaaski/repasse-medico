@@ -477,7 +477,8 @@ def exportar_excel(request, pk):
     ws["A2"] = (
         f"Profissional: {ext.medico_nome}  |  "
         f"Período: {ext.data_ini} a {ext.data_fim}  |  "
-        f"Competência: {repasse.competencia_fmt}"
+        f"Competência: {repasse.competencia_fmt}  |  "
+        f"Unidade: {ext.unidade_nome or 'não informada'}"
     )
     ws.merge_cells("A2:N2")
     ws["A2"].alignment = Alignment(horizontal="center")

@@ -1,45 +1,38 @@
 {% extends "siresp_app/base.html" %}
 
 {% block title %}Auditoria{% endblock %}
-
-{% block content %}
-<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-    <h2 class="mb-0"><i class="bi bi-journal-text"></i> Auditoria</h2>
-    <a href="{% url 'siresp_app:auditoria_csv' %}?{{ query }}" class="btn btn-outline-success">
+{% block icone_pagina %}bi-journal-text{% endblock %}
+{% block titulo_pagina %}Auditoria{% endblock %}
+{% block subtitulo_pagina %}<p class="page-subtitle">Registro de tudo o que foi alterado no sistema: quem, quando e o que mudou.</p>{% endblock %}
+{% block acoes_pagina %}
+<a href="{% url 'siresp_app:auditoria_csv' %}?{{ query }}" class="btn btn-outline-success">
         <i class="bi bi-filetype-csv"></i> Exportar CSV (com filtros)
     </a>
-</div>
+{% endblock %}
 
-<div class="alert alert-info small">
-    Trilha de tudo o que foi alterado no sistema: quem fez, quando e o que mudou (valores antigo → novo).
-    Os registros não podem ser editados nem apagados pela aplicação.
-</div>
+{% block content %}
 
-<form method="get" class="row g-2 mb-3">
-    <div class="col-md-2">
-        <select name="usuario" class="form-select form-select-sm">
-            <option value="">Todos os usuários</option>
-            {% for u in usuarios %}<option value="{{ u }}" {% if filtros.usuario|lower == u|lower %}selected{% endif %}>{{ u }}</option>{% endfor %}
-        </select>
-    </div>
-    <div class="col-md-3">
-        <select name="acao" class="form-select form-select-sm">
-            <option value="">Todas as ações</option>
-            {% for cod, nome in acoes %}<option value="{{ cod }}" {% if filtros.acao == cod %}selected{% endif %}>{{ nome }}</option>{% endfor %}
-        </select>
-    </div>
-    <div class="col-md-2"><input type="date" name="de" value="{{ filtros.de }}" class="form-control form-control-sm" title="De"></div>
-    <div class="col-md-2"><input type="date" name="ate" value="{{ filtros.ate }}" class="form-control form-control-sm" title="Até"></div>
-    <div class="col-md-2"><input type="text" name="q" value="{{ filtros.q }}" class="form-control form-control-sm" placeholder="Profissional / texto"></div>
-    <div class="col-md-1"><input type="text" name="repasse" value="{{ filtros.repasse }}" class="form-control form-control-sm" placeholder="Repasse #"></div>
-    <div class="col-auto"><button class="btn btn-sm btn-primary"><i class="bi bi-funnel"></i> Filtrar</button>
-        <a href="{% url 'siresp_app:auditoria_lista' %}" class="btn btn-sm btn-outline-secondary">Limpar</a></div>
+<form method="get" class="toolbar filtros">
+    <select name="usuario" class="form-select form-select-sm">
+        <option value="">Todos os usuários</option>
+        {% for u in usuarios %}<option value="{{ u }}" {% if filtros.usuario|lower == u|lower %}selected{% endif %}>{{ u }}</option>{% endfor %}
+    </select>
+    <select name="acao" class="form-select form-select-sm">
+        <option value="">Todas as ações</option>
+        {% for cod, nome in acoes %}<option value="{{ cod }}" {% if filtros.acao == cod %}selected{% endif %}>{{ nome }}</option>{% endfor %}
+    </select>
+    <input type="date" name="de" value="{{ filtros.de }}" class="form-control form-control-sm" title="De">
+    <input type="date" name="ate" value="{{ filtros.ate }}" class="form-control form-control-sm" title="Até">
+    <input type="text" name="q" value="{{ filtros.q }}" class="form-control form-control-sm grow" placeholder="Profissional / texto">
+    <input type="text" name="repasse" value="{{ filtros.repasse }}" class="form-control form-control-sm" style="max-width:110px;" placeholder="Repasse #">
+    <button class="btn btn-sm btn-primary"><i class="bi bi-funnel"></i> Filtrar</button>
+    <a href="{% url 'siresp_app:auditoria_lista' %}" class="btn btn-sm btn-outline-secondary">Limpar</a>
 </form>
 
 <div class="card">
     <div class="table-responsive">
         <table class="table table-sm align-middle mb-0">
-            <thead class="table-light">
+            <thead>
                 <tr><th style="width:150px;">Data/hora</th><th>Usuário</th><th>Ação</th>
                     <th>O que foi feito</th><th>Profissional</th><th>IP</th></tr>
             </thead>
@@ -49,11 +42,11 @@
                     <td class="small text-nowrap">{{ log.criado_em|date:"d/m/Y H:i:s" }}</td>
                     <td>{{ log.usuario_nome|default:"—" }}</td>
                     <td>
-                        <span class="badge {% if log.acao == 'REPASSE_REABERTO' or log.acao == 'LOGIN_FALHA' %}bg-danger
-                                    {% elif log.acao == 'REPASSE_FINALIZADO' %}bg-success
-                                    {% elif log.acao == 'REPASSE_EDITADO' or log.acao == 'GRUPO_EDITADO' or log.acao == 'REGRA_EDITADA' %}bg-warning text-dark
-                                    {% elif 'EXCLUI' in log.acao or log.acao == 'REGRAS_LIMPAS' %}bg-danger
-                                    {% else %}bg-secondary{% endif %}">{% for cod, nome in acoes %}{% if cod == log.acao %}{{ nome }}{% endif %}{% endfor %}</span>
+                        <span class="chip {% if log.acao == 'REPASSE_REABERTO' or log.acao == 'LOGIN_FALHA' %}chip-vermelho
+                                    {% elif log.acao == 'REPASSE_FINALIZADO' %}chip-verde
+                                    {% elif log.acao == 'REPASSE_EDITADO' or log.acao == 'GRUPO_EDITADO' or log.acao == 'REGRA_EDITADA' %}chip-ambar
+                                    {% elif 'EXCLUI' in log.acao or log.acao == 'REGRAS_LIMPAS' or log.acao == 'REPASSE_APAGADO' %}chip-vermelho
+                                    {% endif %}">{% for cod, nome in acoes %}{% if cod == log.acao %}{{ nome }}{% endif %}{% endfor %}</span>
                     </td>
                     <td class="small">
                         {{ log.descricao }}

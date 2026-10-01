@@ -1,19 +1,21 @@
 {% extends "siresp_app/base.html" %}
 
 {% block title %}Equipes Médicas{% endblock %}
-
-{% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h2><i class="bi bi-people-fill"></i> Equipes Médicas</h2>
-    {% if eh_admin %}
+{% block icone_pagina %}bi-people-fill{% endblock %}
+{% block titulo_pagina %}Equipes Médicas{% endblock %}
+{% block subtitulo_pagina %}<p class="page-subtitle">Os repasses de uma equipe saem em conjunto, em nome da empresa faturada.</p>{% endblock %}
+{% block acoes_pagina %}
+{% if eh_admin %}
     <a href="{% url 'siresp_app:equipes_nova' %}" class="btn btn-primary">
         <i class="bi bi-plus-lg"></i> Nova equipe
     </a>
     {% endif %}
-</div>
+{% endblock %}
+
+{% block content %}
 
 {% include "siresp_app/_modo_consulta.html" %}
-<div class="alert alert-info small">
+<div class="dica">
     Os repasses dos profissionais de uma equipe saem <strong>em conjunto</strong> no relatório, com o nome da
     equipe, os profissionais e o valor somado (faturado em nome da empresa). Cada profissional pode estar
     em apenas uma equipe. {{ sem_equipe }} profissional(is) ativo(s) sem equipe.
@@ -25,7 +27,7 @@
         <div class="card h-100">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <strong>{{ e.nome }}</strong>
-                <span class="badge bg-secondary">{{ e.qtd }} profissional(is)</span>
+                <span class="chip">{{ e.qtd }} profissional(is)</span>
             </div>
             <ul class="list-group list-group-flush small">
                 {% for p in e.membros.all %}<li class="list-group-item">{{ p.nome }}</li>

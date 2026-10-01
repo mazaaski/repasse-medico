@@ -1,47 +1,48 @@
 {% extends "siresp_app/base.html" %}
 
 {% block title %}Relatórios{% endblock %}
-
-{% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h2><i class="bi bi-bar-chart"></i> Relatórios</h2>
-    <a href="{% url 'siresp_app:repasse_lote' %}" class="btn btn-outline-secondary">
+{% block icone_pagina %}bi-bar-chart{% endblock %}
+{% block titulo_pagina %}Relatórios{% endblock %}
+{% block subtitulo_pagina %}<p class="page-subtitle">Repasses de todos os usuários, para consulta e exportação.</p>{% endblock %}
+{% block acoes_pagina %}
+<a href="{% url 'siresp_app:repasse_lote' %}" class="btn btn-outline-secondary">
         <i class="bi bi-cash-stack"></i> Voltar ao Repasse em Lote
     </a>
-</div>
+{% endblock %}
 
-<div class="alert alert-info small">
-    <span class="badge bg-success-subtle text-success-emphasis border border-success-subtle">verde = finalizado</span>
-    <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle">amarelo = rascunho</span>
-    &nbsp;Selecione os <strong>finalizados</strong> para gerar Excel ou PDF (com totais por equipe).
-    Rascunhos ainda precisam ser finalizados.
-    Você vê os repasses de <strong>todos os usuários</strong>.
+{% block content %}
+
+<div class="dica">
+    <strong>Legenda:</strong> {% include "siresp_app/_situacao.html" with status="finalizado" %} linha verde ·
+    {% include "siresp_app/_situacao.html" with status="rascunho" %} linha amarela.
+    Marque os <strong>finalizados</strong> para gerar Excel ou PDF (com totais por equipe). Você vê os repasses de
+    <strong>todos os usuários</strong>.
     {% if eh_admin %}Como administrador, também pode reabrir (com motivo registrado).
     {% else %}Reabrir um repasse finalizado só é possível para administradores.{% endif %}
 </div>
 
-<form method="get" class="row g-2 mb-3">
-    <div class="col-md-4">
-        <input type="text" name="medico" value="{{ filtro_medico }}" class="form-control"
-               placeholder="Filtrar por nome do profissional">
-    </div>
-    <div class="col-md-3">
-        <select name="competencia" class="form-select" onchange="this.form.submit()">
-            <option value="">Todas as competências</option>
-            {% for c in competencias %}
-            <option value="{{ c|date:'Y-m' }}" {% if filtro_competencia == c|date:'Y-m' %}selected{% endif %}>
-                Competência {{ c|date:'m/Y' }}</option>
-            {% endfor %}
-        </select>
-    </div>
-    <div class="col-md-3">
-        <select name="situacao" class="form-select" onchange="this.form.submit()">
-            <option value="">Todas as situações</option>
-            <option value="finalizado" {% if filtro_situacao == 'finalizado' %}selected{% endif %}>Só finalizados</option>
-            <option value="rascunho" {% if filtro_situacao == 'rascunho' %}selected{% endif %}>Só rascunhos</option>
-        </select>
-    </div>
-    <div class="col-auto"><button class="btn btn-outline-primary"><i class="bi bi-search"></i> Filtrar</button></div>
+<form method="get" class="toolbar filtros">
+    <input type="text" name="medico" value="{{ filtro_medico }}" class="form-control form-control-sm grow"
+           placeholder="Filtrar por nome do profissional">
+    <select name="competencia" class="form-select form-select-sm" onchange="this.form.submit()">
+        <option value="">Todas as competências</option>
+        {% for c in competencias %}
+        <option value="{{ c|date:'Y-m' }}" {% if filtro_competencia == c|date:'Y-m' %}selected{% endif %}>
+            Competência {{ c|date:'m/Y' }}</option>
+        {% endfor %}
+    </select>
+    {% if unidades %}
+    <select name="unidade" class="form-select form-select-sm" onchange="this.form.submit()" title="Gerar o relatório em nome de uma unidade">
+        <option value="">Todas as unidades</option>
+        {% for u in unidades %}<option value="{{ u }}" {% if filtro_unidade == u %}selected{% endif %}>{{ u }}</option>{% endfor %}
+    </select>
+    {% endif %}
+    <select name="situacao" class="form-select form-select-sm" onchange="this.form.submit()">
+        <option value="">Todas as situações</option>
+        <option value="finalizado" {% if filtro_situacao == 'finalizado' %}selected{% endif %}>Só finalizados</option>
+        <option value="rascunho" {% if filtro_situacao == 'rascunho' %}selected{% endif %}>Só rascunhos</option>
+    </select>
+    <button class="btn btn-sm btn-primary"><i class="bi bi-search"></i> Filtrar</button>
 </form>
 
 <form method="post" action="{% url 'siresp_app:relatorios_gerar_excel' %}" id="form-excel">{% csrf_token %}</form>
@@ -62,30 +63,31 @@
         </div>
         <div class="d-flex gap-2">
             {% if eh_admin %}
-            <button type="button" class="btn btn-outline-warning" onclick="pedirMotivoReabrir()">
+            <button type="button" class="btn btn-sm btn-outline-warning" onclick="pedirMotivoReabrir()">
                 <i class="bi bi-unlock"></i> Reabrir selecionados (admin)
             </button>
             {% endif %}
-            <button type="button" class="btn btn-success" onclick="gerarExcel()">
+            <button type="button" class="btn btn-sm btn-success" onclick="gerarExcel()">
                 <i class="bi bi-file-earmark-excel"></i> Gerar Excel
             </button>
-            <button type="button" class="btn btn-danger" onclick="gerarPdf()">
+            <button type="button" class="btn btn-sm btn-danger" onclick="gerarPdf()">
                 <i class="bi bi-file-earmark-pdf"></i> Gerar PDF
             </button>
         </div>
     </div>
     <div class="table-responsive">
         <table class="table table-hover table-sm align-middle mb-0">
-            <thead class="table-light">
+            <thead>
                 <tr>
                     <th style="width:40px;"></th>
                     <th>Profissional</th>
                     <th>Equipe</th>
+                    <th>Unidade</th>
                     <th>Usuário</th>
                     <th>Situação</th>
                     <th>Competência</th>
-                    <th class="text-end">Horas</th>
-                    <th class="text-end">Total (R$)</th>
+                    <th class="num">Horas</th>
+                    <th class="num">Total (R$)</th>
                     <th>Finalizado em</th>
                     <th></th>
                 </tr>
@@ -99,28 +101,28 @@
                     </td>
                     <td><strong>{{ r.extracao.medico_nome }}</strong>
                         <div class="small text-muted">{{ r.extracao.data_ini }} a {{ r.extracao.data_fim }}</div></td>
-                    <td>{% if r.equipe %}<span class="badge bg-primary">{{ r.equipe.nome }}</span>{% endif %}</td>
+                    <td>{% if r.equipe %}<span class="chip chip-azul">{{ r.equipe.nome }}</span>{% endif %}</td>
+                    <td class="small">{{ r.extracao.unidade_nome|default:"—" }}</td>
                     <td class="small">{{ r.usuario_web.username }}</td>
-                    <td>{% if r.finalizado %}<span class="badge bg-success"><i class="bi bi-lock-fill"></i> Finalizado</span>
-                        {% else %}<span class="badge bg-warning text-dark">Rascunho</span>{% endif %}</td>
+                    <td>{% if r.finalizado %}{% include "siresp_app/_situacao.html" with status="finalizado" %}{% else %}{% include "siresp_app/_situacao.html" with status="rascunho" %}{% endif %}</td>
                     <td>{{ r.competencia_fmt|default:"—" }}</td>
-                    <td class="text-end">{{ r.horas_total_final|floatformat:"2g" }}</td>
-                    <td class="text-end fw-bold">{{ r.valor_total_final|floatformat:"2g" }}</td>
-                    <td class="small">{{ r.finalizado_em|date:"d/m/Y H:i"|default:"—" }}</td>
+                    <td class="num">{{ r.horas_total_final|floatformat:"2g" }}</td>
+                    <td class="num fw-bold">{{ r.valor_total_final|floatformat:"2g" }}</td>
+                    <td class="data">{{ r.finalizado_em|date:"d/m/Y H:i"|default:"—" }}</td>
                     <td class="text-end">
                         <a href="{% url 'siresp_app:repasse_ver' r.pk %}" class="btn btn-sm btn-outline-primary" title="Abrir">
                             <i class="bi bi-box-arrow-up-right"></i></a>
                     </td>
                 </tr>
                 {% empty %}
-                <tr><td colspan="10" class="text-center text-muted p-4">Nenhum repasse encontrado.</td></tr>
+                <tr><td colspan="11" class="text-center text-muted p-4">Nenhum repasse encontrado.</td></tr>
                 {% endfor %}
             </tbody>
             {% if repasses %}
             <tfoot class="table-light fw-bold">
-                <tr><td colspan="6">Total listado ({{ qtd_finalizados }} finalizado(s), {{ qtd_rascunhos }} rascunho(s))</td>
-                    <td class="text-end">{{ total_horas|floatformat:"2g" }}</td>
-                    <td class="text-end">{{ total_valor|floatformat:"2g" }}</td>
+                <tr><td colspan="7">Total listado ({{ qtd_finalizados }} finalizado(s), {{ qtd_rascunhos }} rascunho(s))</td>
+                    <td class="num">{{ total_horas|floatformat:"2g" }}</td>
+                    <td class="num">{{ total_valor|floatformat:"2g" }}</td>
                     <td colspan="2"></td></tr>
             </tfoot>
             {% endif %}
@@ -133,7 +135,7 @@
 <div class="modal fade" id="modalMotivo" tabindex="-1" data-bs-backdrop="static">
     <div class="modal-dialog">
         <div class="modal-content">
-            <div class="modal-header bg-warning">
+            <div class="modal-header">
                 <h5 class="modal-title"><i class="bi bi-unlock"></i> Reabrir repasses</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
@@ -148,7 +150,7 @@
                 <div id="modal-erro" class="alert alert-danger py-2 small mt-2" style="display:none;"></div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
                 <button type="button" class="btn btn-warning" onclick="confirmarReabrir()">
                     <i class="bi bi-unlock"></i> Reabrir
                 </button>

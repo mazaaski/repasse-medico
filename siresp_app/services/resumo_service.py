@@ -82,3 +82,14 @@ def anexar_resumo_planilha(ws, linhas, total_horas, total_valor,
         c = ws.cell(row=linha, column=col)
         c.font = Font(bold=True)
         c.fill = verde
+
+
+def texto_unidades(nomes):
+    """
+    Texto do cabeçalho dos relatórios: "Unidade: AME ..." (ou "Unidades: A; B").
+    `nomes` são os nomes de unidade das extrações; vazios são ignorados.
+    """
+    distintas = sorted({(n or '').strip() for n in nomes if (n or '').strip()})
+    if not distintas:
+        return 'Unidade: não informada'
+    return ('Unidade: ' if len(distintas) == 1 else 'Unidades: ') + '; '.join(distintas)

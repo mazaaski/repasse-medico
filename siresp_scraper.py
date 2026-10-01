@@ -21,6 +21,7 @@ import time
 
 # ===== CONSTANTES =====
 URL_SIRESP = "https://www.siresp.saude.sp.gov.br/"
+# Unidade sugerida (pré-selecionada na tela quando há mais de uma opção)
 VALUE_ALVO = "2206_AME SAO JOSE DO RIO PRETO"
 
 CABECALHOS = [
@@ -108,6 +109,19 @@ class SirespScraper:
         self.captcha_imagem_b64 = None
         self.captcha_id = 0
 
+        # Escolha de unidade (quando o SIRESP oferece mais de uma)
+        self.aguardando_unidade = False
+        self.unidades_disponiveis = []
+        self._digitos = ("", "", "", "")
+        # Unidade com a qual o login foi feito: {valor, texto, nome, codigo} (None = SIRESP não perguntou)
+        self.unidade_atual = None
+
+        # Última tela do SIRESP capturada quando o login não segue o caminho conhecido
+        self.ultima_tela = None
+        self.ultima_tela_id = 0
+        self.ultimo_alerta_texto = ""
+        self.timeout_pos_captcha = 30
+
     def log(self, msg):
         if self.callback_log:
             self.callback_log(msg)
@@ -120,11 +134,25 @@ class SirespScraper:
     # =========================================================
     # FECHAR ALERTA DO SIRESP (SweetAlert2)
     # =========================================================
+    def _guardar_texto_alerta(self):
+        """Lê o texto do popup SweetAlert2 aberto (se houver) antes de fechá-lo."""
+        try:
+            for p in self.driver.find_elements(By.CLASS_NAME, "swal2-popup"):
+                if p.is_displayed():
+                    txt = " ".join((p.text or "").split())
+                    if txt:
+                        self.ultimo_alerta_texto = txt[:300]
+                        self.log(f"🚨 Texto do alerta do SIRESP: {self.ultimo_alerta_texto}")
+                        return
+        except Exception:
+            pass
+
     def _fechar_alerta_siresp(self):
         """Fecha o popup SweetAlert2 do SIRESP se estiver aberto."""
         try:
             self.driver.switch_to.default_content()
 
+            self._guardar_texto_alerta()
             botoes_ok = self.driver.find_elements(
                 By.XPATH, "//button[contains(@class, 'swal2-confirm')]"
             )
@@ -405,6 +433,7 @@ class SirespScraper:
         texto = (texto or "").strip()
         if not texto:
             return {"ok": False, "mensagem": "Digite o texto do CAPTCHA."}
+        self.ultimo_alerta_texto = ""
 
         try:
             self.driver.switch_to.default_content()
@@ -526,6 +555,7 @@ class SirespScraper:
                     cpf_primeiros, cpf_ultimos,
                     rg_primeiros, rg_ultimos):
 
+        self.unidade_atual = None
         self.log("🌐 Abrindo navegador (headless)...")
         self.driver = _criar_driver()
         self.driver.get(URL_SIRESP)
@@ -551,168 +581,453 @@ class SirespScraper:
         self.log("⏳ Aguardando o usuário digitar o CAPTCHA...")
 
     # =========================================================
+    # LOCALIZAR ELEMENTOS EM QUALQUER IFRAME
+    # =========================================================
+    def _caminho_ate(self, seletor, profundidade=4):
+        """
+        Procura `seletor` (CSS) na página e, recursivamente, em todos os iframes/frames.
+        Retorna a lista de índices de frame até o primeiro contexto que o contém
+        ([] = página principal) ou None. Deixa o driver na página principal.
+        """
+        def dfs(caminho):
+            try:
+                if self.driver.find_elements(By.CSS_SELECTOR, seletor):
+                    return list(caminho)
+                if len(caminho) >= profundidade:
+                    return None
+                total = len(self.driver.find_elements(By.CSS_SELECTOR, "iframe, frame"))
+            except Exception:
+                return None
+            for i in range(total):
+                try:
+                    frames = self.driver.find_elements(By.CSS_SELECTOR, "iframe, frame")
+                    self.driver.switch_to.frame(frames[i])
+                except Exception:
+                    continue
+                achou = dfs(caminho + [i])
+                if achou is not None:
+                    return achou
+                try:
+                    self.driver.switch_to.parent_frame()
+                except Exception:
+                    return None
+            return None
+
+        try:
+            self.driver.switch_to.default_content()
+            return dfs([])
+        finally:
+            try:
+                self.driver.switch_to.default_content()
+            except Exception:
+                pass
+
+    def _entrar_no_caminho(self, caminho):
+        self.driver.switch_to.default_content()
+        for i in caminho:
+            frames = self.driver.find_elements(By.CSS_SELECTOR, "iframe, frame")
+            self.driver.switch_to.frame(frames[i])
+
+    def _entrar_onde_existe(self, seletor, espera=0):
+        """Entra no frame que contém `seletor`. True se achou (o driver fica lá dentro)."""
+        fim = time.time() + espera
+        while True:
+            caminho = self._caminho_ate(seletor)
+            if caminho is not None:
+                try:
+                    self._entrar_no_caminho(caminho)
+                    return True
+                except Exception:
+                    pass
+            if time.time() >= fim:
+                break
+            time.sleep(0.4)
+        try:
+            self.driver.switch_to.default_content()
+        except Exception:
+            pass
+        return False
+
+    # =========================================================
+    # O QUE O SIRESP MOSTROU (diagnóstico para a tela do app)
+    # =========================================================
+    def _diagnosticar_tela(self):
+        """
+        Captura a tela atual do SIRESP (imagem + texto visível) para o app mostrar ao
+        usuário quando o login não segue o caminho conhecido. Nunca levanta exceção.
+        """
+        diag = {"imagem_b64": "", "texto": "", "url": "", "titulo": "", "alerta": self.ultimo_alerta_texto}
+        try:
+            self.driver.switch_to.default_content()
+            diag["url"] = self.driver.current_url
+            diag["titulo"] = self.driver.title
+        except Exception:
+            pass
+        try:
+            png = self.driver.get_screenshot_as_png()
+            diag["imagem_b64"] = "data:image/png;base64," + base64.b64encode(png).decode()
+        except Exception as e:
+            self.log(f"⚠️ Não consegui tirar screenshot da tela: {e}")
+
+        partes = []
+
+        def texto_do_contexto(prof):
+            try:
+                t = self.driver.execute_script(
+                    "return (document.body ? document.body.innerText : '') || '';")
+                t = " ".join((t or "").split())
+                if t:
+                    partes.append(t)
+                if prof >= 3:
+                    return
+                total = len(self.driver.find_elements(By.CSS_SELECTOR, "iframe, frame"))
+                for i in range(total):
+                    frames = self.driver.find_elements(By.CSS_SELECTOR, "iframe, frame")
+                    self.driver.switch_to.frame(frames[i])
+                    texto_do_contexto(prof + 1)
+                    self.driver.switch_to.parent_frame()
+            except Exception:
+                try:
+                    self.driver.switch_to.default_content()
+                except Exception:
+                    pass
+
+        try:
+            self.driver.switch_to.default_content()
+            texto_do_contexto(0)
+        finally:
+            try:
+                self.driver.switch_to.default_content()
+            except Exception:
+                pass
+        diag["texto"] = " | ".join(partes)[:1500]
+        self.ultima_tela = diag
+        self.ultima_tela_id += 1
+        self.log(f"🖼️ Tela do SIRESP capturada (#{self.ultima_tela_id}): {diag['texto'][:200]}")
+        return diag
+
+    def _estado_pos_captcha(self):
+        """'unidade' | 'digitos' | 'logado' | None, olhando a página e todos os iframes."""
+        if self._caminho_ate("input[name='unidade']") is not None:
+            return "unidade"
+        if self._caminho_ate("#digito_doc") is not None:
+            return "digitos"
+        try:
+            self.driver.switch_to.default_content()
+            if self.driver.find_elements(By.ID, "site"):
+                return "logado"
+        except Exception:
+            pass
+        return None
+
+    # =========================================================
     # LOGIN — FASE 2
     # =========================================================
     def continuar_login_apos_captcha(self, cpf_primeiros, cpf_ultimos,
-                                      rg_primeiros, rg_ultimos):
-        """Roda após o envio do CAPTCHA. NUNCA retorna None."""
+                                      rg_primeiros, rg_ultimos, unidade_preferida=""):
+        """
+        Roda após o envio do CAPTCHA. NUNCA retorna None.
+
+        A tela que o SIRESP mostra depois do CAPTCHA pode ser a escolha de unidade, os
+        dígitos de CPF/RG ou já o sistema — e pode vir fora do iframe "site". Por isso
+        olhamos a página inteira. Se houver mais de uma unidade (sem preferência salva),
+        o login PAUSA e retorna {"aguardando_unidade": True, "unidades": [...]}: a escolha
+        é feita depois por escolher_unidade() e o login é concluído por concluir_login().
+        """
         try:
             inicio = time.time()
-            timeout = 30
+            self.ultima_tela = None
 
-            logado = False
-            while time.time() - inicio < timeout:
-                try:
-                    self.driver.switch_to.default_content()
-                    iframes = self.driver.find_elements(By.ID, "site")
-                    if iframes:
-                        logado = True
+            estado = None
+            visto_logado = None
+            while time.time() - inicio < self.timeout_pos_captcha:
+                estado = self._estado_pos_captcha()
+                if estado in ("unidade", "digitos"):
+                    break
+                if estado == "logado":
+                    # o sistema carregou: dá uma folga curta para uma tela de unidade/dígitos
+                    # aparecer dentro dele antes de concluir que não há nenhuma
+                    visto_logado = visto_logado or time.time()
+                    if time.time() - visto_logado >= 3:
                         break
-                except Exception:
-                    pass
                 time.sleep(0.4)
 
-            if not logado:
-                self.log("❌ Login não completou. Capturando novo CAPTCHA...")
+            if estado is None:
+                self.log("❌ Login não completou. Capturando a tela do SIRESP e um novo CAPTCHA...")
                 self.driver.switch_to.default_content()
                 time.sleep(1)
 
                 self._fechar_alerta_siresp()
                 time.sleep(0.5)
+                self._diagnosticar_tela()          # mostra no app o que o SIRESP exibiu
 
                 if self._capturar_captcha():
+                    extra = f" O SIRESP avisou: {self.ultimo_alerta_texto}" if self.ultimo_alerta_texto else ""
                     return {
                         "ok": False,
-                        "mensagem": "CAPTCHA inválido. Tente novamente.",
+                        "mensagem": "CAPTCHA inválido. Tente novamente." + extra,
                         "captcha_novo": True,
                     }
 
                 return {
                     "ok": False,
-                    "mensagem": "Login não completou. Verifique suas credenciais.",
+                    "mensagem": "Login não completou. Veja a tela do SIRESP abaixo.",
                     "captcha_novo": False,
                 }
 
-            self.log("🎉 Login detectado! Prosseguindo...")
+            self.log(f"🎉 Tela detectada após o CAPTCHA: {estado}. Prosseguindo...")
+            self._digitos = (cpf_primeiros, cpf_ultimos, rg_primeiros, rg_ultimos)
 
-            # ETAPA 3: unidade
-            try:
-                selecionou_unidade = self._tentar_selecionar_unidade()
-                if selecionou_unidade:
-                    self.log("✅ Unidade selecionada")
-                else:
-                    self.log("ℹ️  Tela de unidade não apareceu")
-            except Exception as e:
-                self.log(f"⚠️ Erro na etapa de unidade: {e}")
+            # ETAPA 3: unidade (pode pausar para o usuário escolher)
+            if estado != "digitos":
+                etapa = self._etapa_unidade(unidade_preferida, espera=8 if estado == "unidade" else 3)
+                if etapa == "aguardando":
+                    self.log(f"⏸️  {len(self.unidades_disponiveis)} unidades: aguardando escolha do usuário")
+                    return {
+                        "ok": False,
+                        "aguardando_unidade": True,
+                        "unidades": list(self.unidades_disponiveis),
+                        "sugerida": VALUE_ALVO,
+                        "mensagem": "Selecione a unidade para continuar.",
+                        "captcha_novo": False,
+                    }
+            else:
+                etapa = "nao_apareceu"
 
-            # ETAPA 4: dígitos
-            try:
-                pediu_digitos = self._tentar_digitos_seguranca(
-                    cpf_primeiros, cpf_ultimos, rg_primeiros, rg_ultimos
-                )
-                if not pediu_digitos:
-                    self.log("ℹ️  Tela de dígitos não apareceu")
-            except Exception as e:
-                msg = str(e)
-                self.log(f"❌ Erro nos dígitos: {msg}")
-                return {
-                    "ok": False,
-                    "mensagem": f"Dígitos de segurança rejeitados: {msg}",
-                    "captcha_novo": False,
-                }
-
-            # FINALIZA
-            self.driver.switch_to.default_content()
-            WebDriverWait(self.driver, 30).until(
-                lambda d: d.find_elements(By.ID, "site")
+            # ETAPA 4: dígitos + finalização (se acabou de passar pela tela de unidade,
+            # a página de dígitos pode demorar mais a carregar)
+            return self._finalizar_login(
+                *self._digitos, espera_digitos=10 if etapa == "selecionada" else 3
             )
-            time.sleep(0.5)
-
-            self.logado = True
-            self.log("🎉 Login completo! Sessão ativa.")
-            return {"ok": True, "mensagem": "Login concluído."}
 
         except Exception as e:
             self.log(f"❌ Erro inesperado no login: {e}")
             import traceback
             traceback.print_exc()
+            try:
+                self._diagnosticar_tela()
+            except Exception:
+                pass
             return {
                 "ok": False,
                 "mensagem": f"Erro inesperado: {e}",
                 "captcha_novo": False,
             }
 
+    def concluir_login(self):
+        """Continua o login (dígitos de CPF/RG) depois que a unidade foi escolhida."""
+        try:
+            return self._finalizar_login(*self._digitos, espera_digitos=10)
+        except Exception as e:
+            self.log(f"❌ Erro inesperado ao concluir o login: {e}")
+            try:
+                self._diagnosticar_tela()
+            except Exception:
+                pass
+            return {"ok": False, "mensagem": f"Erro inesperado: {e}", "captcha_novo": False}
+
+    def _finalizar_login(self, cpf_primeiros, cpf_ultimos, rg_primeiros, rg_ultimos,
+                         espera_digitos=3):
+        # dígitos de segurança
+        try:
+            pediu_digitos = self._tentar_digitos_seguranca(
+                cpf_primeiros, cpf_ultimos, rg_primeiros, rg_ultimos, espera_digitos
+            )
+            if not pediu_digitos:
+                self.log("ℹ️  Tela de dígitos não apareceu")
+        except Exception as e:
+            msg = str(e)
+            self.log(f"❌ Erro nos dígitos: {msg}")
+            self._diagnosticar_tela()
+            return {
+                "ok": False,
+                "mensagem": f"Dígitos de segurança rejeitados: {msg}",
+                "captcha_novo": False,
+            }
+
+        self.driver.switch_to.default_content()
+        try:
+            WebDriverWait(self.driver, 30).until(
+                lambda d: d.find_elements(By.ID, "site")
+            )
+        except TimeoutException:
+            self.log("❌ O sistema do SIRESP não carregou depois do login")
+            self._diagnosticar_tela()
+            return {
+                "ok": False,
+                "mensagem": "O SIRESP não abriu o sistema depois do login. Veja a tela abaixo.",
+                "captcha_novo": False,
+            }
+        time.sleep(0.5)
+
+        self.logado = True
+        self.ultima_tela = None
+        self.log("🎉 Login completo! Sessão ativa.")
+        return {"ok": True, "mensagem": "Login concluído."}
+
     # =========================================================
     # SELECIONAR UNIDADE
     # =========================================================
-    def _tentar_selecionar_unidade(self):
+    _JS_UNIDADES = """
+        return Array.from(document.querySelectorAll("input[name='unidade']")).map(function (r) {
+            var lb = r.closest('label') || r.parentElement;
+            var txt = (lb ? lb.innerText : r.value) || r.value;
+            return {valor: r.value, texto: txt.replace(/\\s+/g, ' ').trim()};
+        });
+    """
+
+    def _entrar_no_frame_unidade(self, espera=5):
+        """
+        Procura os radios 'unidade' na página ou em qualquer iframe.
+        Retorna True se achou (o driver fica dentro do frame certo).
+        Retorna False logo que aparece a tela de dígitos (não há escolha de unidade).
+        """
+        fim = time.time() + espera
+        while True:
+            if self._entrar_onde_existe("input[name='unidade']", 0):
+                return True
+            if self._caminho_ate("#digito_doc") is not None:
+                return False
+            if time.time() >= fim:
+                break
+            time.sleep(0.4)
         try:
             self.driver.switch_to.default_content()
-            iframe_site = WebDriverWait(self.driver, 5).until(
-                EC.presence_of_element_located((By.ID, "site"))
-            )
-            self.driver.switch_to.frame(iframe_site)
+        except Exception:
+            pass
+        return False
 
-            iframes_principal = self.driver.find_elements(By.ID, "principal")
-            if not iframes_principal:
-                self.driver.switch_to.default_content()
-                return False
+    def _listar_unidades(self, espera=5):
+        """Lista [{valor, texto}] das unidades oferecidas pelo SIRESP (vazio se não há a tela)."""
+        if not self._entrar_no_frame_unidade(espera):
+            return []
+        unidades = self.driver.execute_script(self._JS_UNIDADES) or []
+        self.driver.switch_to.default_content()
+        return unidades
 
-            self.driver.switch_to.frame(iframes_principal[0])
+    @staticmethod
+    def _info_unidade(valor, texto=""):
+        """'2206_AME SAO JOSE DO RIO PRETO' -> código 2206, nome 'AME SAO JOSE DO RIO PRETO'."""
+        codigo, _, nome = (valor or "").partition("_")
+        if not nome:
+            codigo, nome = "", (texto or valor or "")
+        return {"valor": valor, "texto": texto or nome, "nome": nome.strip(), "codigo": codigo.strip()}
 
-            try:
-                radio = WebDriverWait(self.driver, 5).until(
-                    EC.presence_of_element_located(
-                        (
-                            By.XPATH,
-                            f"//input[@name='unidade' and @value='{VALUE_ALVO}']",
-                        )
-                    )
-                )
-            except Exception:
-                self.driver.switch_to.default_content()
-                return False
+    def _clicar_unidade(self, valor, texto=""):
+        """Marca o radio da unidade e confirma com OK."""
+        if not self._entrar_no_frame_unidade(8):
+            raise Exception("A tela de seleção de unidade não está mais disponível.")
 
-            radio.click()
-            self.driver.find_element(
-                By.XPATH, "//input[@name='escolher' and @value='Ok']"
-            ).click()
-
+        marcou = self.driver.execute_script(
+            """
+            var alvo = arguments[0];
+            var rs = document.querySelectorAll("input[name='unidade']");
+            for (var i = 0; i < rs.length; i++) {
+                if (rs[i].value === alvo) { rs[i].click(); return true; }
+            }
+            return false;
+            """,
+            valor,
+        )
+        if not marcou:
             self.driver.switch_to.default_content()
-            time.sleep(0.5)
-            return True
+            raise Exception("Unidade não encontrada na lista do SIRESP.")
 
+        # Botão OK: <input type="submit" name="escolher" id="escolher" value="Ok">
+        botoes = (
+            self.driver.find_elements(By.ID, "escolher")
+            or self.driver.find_elements(
+                By.XPATH, "//input[@name='escolher' and @value='Ok']")
+            or self.driver.find_elements(
+                By.XPATH, "//input[@type='submit' or @type='button']")
+        )
+        if not botoes:
+            self.driver.switch_to.default_content()
+            raise Exception("Botão OK da seleção de unidade não encontrado.")
+        self.driver.execute_script("arguments[0].click();", botoes[0])
+        self.driver.switch_to.default_content()
+
+        # Só segue quando a tela de unidade sumiu (vem a tela de dígitos de CPF/RG)
+        if not self._aguardar_saida_unidade(10):
+            raise Exception(
+                "O SIRESP não avançou depois de clicar em OK. Tente escolher a unidade de novo."
+            )
+        self.unidade_atual = self._info_unidade(valor, texto)
+        self.log(f"✅ Unidade selecionada: {valor}")
+
+    def _aguardar_saida_unidade(self, timeout=10):
+        """True quando não há mais radios de unidade na tela (ou apareceu o campo de dígitos)."""
+        fim = time.time() + timeout
+        while time.time() < fim:
+            if not self._entrar_no_frame_unidade(espera=0):
+                return True
+            time.sleep(0.4)
+        return False
+
+    def _etapa_unidade(self, preferida="", espera=5):
+        """
+        Retorna 'nao_apareceu' | 'selecionada' | 'aguardando'.
+        Escolhe sozinho se a unidade preferida está na lista ou se só há uma;
+        caso contrário guarda a lista e pausa para o usuário escolher.
+        """
+        self.unidades_disponiveis = []
+        self.aguardando_unidade = False
+        try:
+            unidades = self._listar_unidades(espera)
         except Exception as e:
-            self.log(f"⚠️  Erro ao tentar selecionar unidade: {e}")
-            try:
-                self.driver.switch_to.default_content()
-            except Exception:
-                pass
-            return False
+            self.log(f"⚠️ Erro ao listar unidades: {e}")
+            return "nao_apareceu"
+
+        if not unidades:
+            self.log("ℹ️  Tela de unidade não apareceu")
+            return "nao_apareceu"
+
+        valores = [u["valor"] for u in unidades]
+        if preferida and preferida in valores:
+            escolha = preferida
+        elif len(valores) == 1:
+            escolha = valores[0]
+        else:
+            escolha = None
+
+        if escolha:
+            texto = next((u["texto"] for u in unidades if u["valor"] == escolha), "")
+            self._clicar_unidade(escolha, texto)
+            return "selecionada"
+
+        self.unidades_disponiveis = unidades
+        self.aguardando_unidade = True
+        return "aguardando"
+
+    def escolher_unidade(self, valor):
+        """Aplica a unidade escolhida pelo usuário. Depois chame concluir_login()."""
+        if not self.aguardando_unidade:
+            return {"ok": False, "mensagem": "Nenhuma escolha de unidade está pendente."}
+        if valor not in [u["valor"] for u in self.unidades_disponiveis]:
+            return {"ok": False, "mensagem": "Unidade inválida."}
+        texto = next((u["texto"] for u in self.unidades_disponiveis if u["valor"] == valor), "")
+        try:
+            self._clicar_unidade(valor, texto)
+        except Exception as e:
+            return {"ok": False, "mensagem": str(e)}
+        self.aguardando_unidade = False
+        self.unidades_disponiveis = []
+        return {"ok": True, "mensagem": "Unidade selecionada."}
 
     # =========================================================
     # DÍGITOS DE SEGURANÇA
     # =========================================================
     def _tentar_digitos_seguranca(self, cpf_primeiros, cpf_ultimos,
-                                 rg_primeiros, rg_ultimos):
+                                 rg_primeiros, rg_ultimos, espera=3):
         try:
-            self.driver.switch_to.default_content()
-            iframe_site = WebDriverWait(self.driver, 5).until(
-                EC.presence_of_element_located((By.ID, "site"))
-            )
-            self.driver.switch_to.frame(iframe_site)
-
-            try:
-                campo_digito = WebDriverWait(self.driver, 3).until(
-                    EC.presence_of_element_located((By.ID, "digito_doc"))
-                )
-            except Exception:
+            # o campo pode estar dentro do iframe "site" ou na página principal
+            if not self._entrar_onde_existe("#digito_doc", espera):
                 self.driver.switch_to.default_content()
                 return False
+            campo_digito = self.driver.find_element(By.ID, "digito_doc")
 
-            labels = self.driver.find_elements(By.TAG_NAME, "label")
             texto_pedido = None
-            for lb in labels:
+            for lb in self.driver.find_elements(By.TAG_NAME, "label"):
                 try:
                     txt = lb.text.strip()
                     if "dígitos" in txt.lower() and ("RG" in txt or "CPF" in txt):
@@ -733,22 +1048,22 @@ class SirespScraper:
                 self.log(f"⚠️ Label não achado. Enviando CPF_ULTIMOS: {digito}")
 
             campo_digito.send_keys(digito)
-            self.driver.find_element(By.ID, "btn_entrar").click()
+            botao = (self.driver.find_elements(By.ID, "btn_entrar")
+                     or self.driver.find_elements(By.XPATH, "//input[@type='submit' or @type='button']"))
+            if not botao:
+                raise Exception("Botão de confirmar os dígitos não encontrado.")
+            botao[0].click()
 
             self.driver.switch_to.default_content()
-            time.sleep(0.5)
+            time.sleep(1.5)
 
-            time.sleep(1)
-            self.driver.switch_to.default_content()
-            iframe_site = self.driver.find_elements(By.ID, "site")
-            if iframe_site:
-                self.driver.switch_to.frame(iframe_site[0])
-                if self.driver.find_elements(By.ID, "digito_doc"):
-                    self.log("❌ Dígitos de segurança rejeitados pelo SIRESP")
-                    raise Exception(
-                        "Dígitos de segurança rejeitados. "
-                        "Verifique se CPF/RG estão corretos."
-                    )
+            # se o campo continua na tela, o SIRESP recusou os dígitos
+            if self._caminho_ate("#digito_doc") is not None:
+                self.log("❌ Dígitos de segurança rejeitados pelo SIRESP")
+                raise Exception(
+                    "Dígitos de segurança rejeitados. "
+                    "Verifique se CPF/RG estão corretos."
+                )
 
             return True
 
@@ -1106,3 +1421,5 @@ class SirespScraper:
                 pass
             self.driver = None
             self.logado = False
+            self.aguardando_unidade = False
+            self.unidades_disponiveis = []

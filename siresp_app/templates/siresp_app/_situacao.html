@@ -1,0 +1,6 @@
+{# Selo padrão de situação. Uso: {% include "siresp_app/_situacao.html" with status="finalizado" %} #}
+{% if status == 'finalizado' %}<span class="st st-finalizado"><i class="bi bi-lock-fill"></i> Finalizado</span>
+{% elif status == 'rascunho' %}<span class="st st-rascunho"><i class="bi bi-pencil"></i> Rascunho</span>
+{% elif status == 'extraido' %}<span class="st st-extraido"><i class="bi bi-download"></i> Extraído, sem repasse</span>
+{% elif status == 'pendente' %}<span class="st st-pendente"><i class="bi bi-hourglass"></i> Sem repasse</span>
+{% else %}<span class="st st-neutro"><i class="bi bi-dash-circle"></i> Sem repasse</span>{% endif %}
